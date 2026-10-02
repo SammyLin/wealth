@@ -1,6 +1,7 @@
 package ledger
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,7 +14,7 @@ var FXClient = &http.Client{Timeout: 8 * time.Second}
 
 // fetchFX returns how many units of base one unit of cur was worth on date (YYYY-MM-DD; today or later = latest).
 // Source: fawazahmed0/currency-api (free, no key, daily history from 2024-03).
-func fetchFX(cur, base, date string) (float64, error) {
+func fetchFX(ctx context.Context, cur, base, date string) (float64, error) {
 	cur, base = strings.ToLower(cur), strings.ToLower(base)
 	if !validCurrency(cur) || !validCurrency(base) {
 		return 0, fmt.Errorf("bad currency")
@@ -26,9 +27,18 @@ func fetchFX(cur, base, date string) (float64, error) {
 		"https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@" + date + "/v1/currencies/" + cur + ".json",
 		"https://" + date + ".currency-api.pages.dev/v1/currencies/" + cur + ".json",
 	} {
-		res, err := FXClient.Get(u)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 		if err != nil {
-			lastErr = err
+			return 0, fmt.Errorf("fx request: %w", err)
+		}
+		res, err := FXClient.Do(req)
+		if err != nil {
+			lastErr = fmt.Errorf("fx fetch: %w", err)
+			continue
+		}
+		if res.StatusCode != http.StatusOK {
+			res.Body.Close()
+			lastErr = fmt.Errorf("fx fetch %s: status %d", u, res.StatusCode)
 			continue
 		}
 		var body map[string]json.RawMessage

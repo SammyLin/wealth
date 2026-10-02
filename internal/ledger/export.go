@@ -2,6 +2,7 @@ package ledger
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/csv"
 	"fmt"
@@ -13,23 +14,29 @@ var kindLabel = map[string]string{"bank": "銀行", "tw_stock": "台股", "us_st
 	"real_estate": "不動產", "crypto": "加密貨幣", "liability": "負債"}
 
 // exportCSV writes a spreadsheet-friendly layout: one row per account,
-// one column per snapshot date, balances in the account's own currency, plus TWD totals.
+// one column per snapshot date, balances in the account's own currency, plus totals in the base currency.
 // A UTF-8 BOM makes Excel read the Chinese correctly.
-func exportCSV(db *sql.DB) ([]byte, error) {
+func exportCSV(ctx context.Context, db *sql.DB) ([]byte, error) {
 	type acct struct {
 		id              int64
 		name, kind, cur string
 		archived        bool
 	}
 	var accts []acct
-	rows, err := db.Query(`SELECT id, name, kind, currency, archived FROM accounts ORDER BY id`)
+	rows, err := db.QueryContext(ctx, `SELECT id, name, kind, currency, archived FROM accounts ORDER BY id`)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("export accounts: %w", err)
 	}
+	defer rows.Close()
 	for rows.Next() {
 		var a acct
-		rows.Scan(&a.id, &a.name, &a.kind, &a.cur, &a.archived)
+		if err := rows.Scan(&a.id, &a.name, &a.kind, &a.cur, &a.archived); err != nil {
+			return nil, fmt.Errorf("export accounts: %w", err)
+		}
 		accts = append(accts, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("export accounts: %w", err)
 	}
 	rows.Close()
 
@@ -40,20 +47,28 @@ func exportCSV(db *sql.DB) ([]byte, error) {
 	}
 	var snaps []Snapshot
 	fxByDate := map[string]float64{}
-	rows, err = db.Query(`SELECT account_id, date, amount, fx FROM snapshots`)
+	rows, err = db.QueryContext(ctx, `SELECT account_id, date, amount, fx FROM snapshots`)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("export snapshots: %w", err)
 	}
+	defer rows.Close()
 	for rows.Next() {
 		var s Snapshot
-		rows.Scan(&s.AccountID, &s.Date, &s.Amount, &s.FX)
+		if err := rows.Scan(&s.AccountID, &s.Date, &s.Amount, &s.FX); err != nil {
+			return nil, fmt.Errorf("export snapshots: %w", err)
+		}
+		if vals[s.AccountID] == nil { // orphaned snapshot, skipped like /api/state does
+			continue
+		}
 		snaps = append(snaps, s)
 		vals[s.AccountID][s.Date] = s.Amount
 		if s.FX != 1 {
 			fxByDate[s.Date] = s.FX
 		}
 	}
-	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("export snapshots: %w", err)
+	}
 
 	totals := series(snaps, kindOf)
 	dates := make([]string, len(totals))
@@ -65,7 +80,7 @@ func exportCSV(db *sql.DB) ([]byte, error) {
 	var buf bytes.Buffer
 	buf.WriteString("\xef\xbb\xbf")
 	w := csv.NewWriter(&buf)
-	set, err := settings(db)
+	set, err := settings(ctx, db)
 	if err != nil {
 		return nil, err
 	}
@@ -93,13 +108,13 @@ func exportCSV(db *sql.DB) ([]byte, error) {
 	w.Write(fx)
 	for _, k := range []string{"bank", "tw_stock", "us_stock", "movable", "real_estate", "crypto", "liability"} {
 		row := []string{"小計 " + kindLabel[k] + "(" + base + ")", "", base, ""}
-		any := false
+		nonzero := false
 		for _, r := range totals {
 			v := r.ByKind[k]
-			any = any || v != 0
+			nonzero = nonzero || v != 0
 			row = append(row, fmt.Sprintf("%.0f", v))
 		}
-		if any {
+		if nonzero {
 			w.Write(row)
 		}
 	}

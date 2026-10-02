@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math/big"
 	"net/http"
 	"slices"
@@ -60,14 +61,17 @@ func (j *jwks) key(kid string) (*rsa.PublicKey, error) {
 	j.fetched = time.Now()
 	res, err := j.client.Get(j.url)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fetch access certs: %w", err)
 	}
 	defer res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("fetch access certs: status %d", res.StatusCode)
+	}
 	var set struct {
 		Keys []struct{ Kid, N, E string } `json:"keys"`
 	}
 	if err := json.NewDecoder(res.Body).Decode(&set); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decode access certs: %w", err)
 	}
 	j.keys = map[string]*rsa.PublicKey{}
 	for _, k := range set.Keys {
@@ -104,11 +108,11 @@ func verifyAccessJWT(tok, aud string, keys interface {
 	}
 	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
 	if err != nil {
-		return err
+		return fmt.Errorf("bad signature encoding: %w", err)
 	}
 	pub, err := keys.key(head.Kid)
 	if err != nil {
-		return err
+		return fmt.Errorf("signing key: %w", err)
 	}
 	sum := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
 	if err := rsa.VerifyPKCS1v15(pub, crypto.SHA256, sum[:], sig); err != nil {

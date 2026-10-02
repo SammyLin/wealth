@@ -8,5 +8,7 @@ import "embed"
 //go:embed web/index.html web/icons.js
 var Web embed.FS
 
-//go:embed migrations/0001_init.sql
-var Schema string
+// Migrations are applied in file-name order: by wrangler on D1, by ledger.Migrate on SQLite.
+//
+//go:embed migrations/*.sql
+var Migrations embed.FS

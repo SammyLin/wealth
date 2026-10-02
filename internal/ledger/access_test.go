@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -21,11 +22,7 @@ func (f fixedKeys) key(kid string) (*rsa.PublicKey, error) {
 	return nil, errUnknown
 }
 
-var errUnknown = jsonErr("unknown key")
-
-type jsonErr string
-
-func (e jsonErr) Error() string { return string(e) }
+var errUnknown = errors.New("unknown key")
 
 func sign(t *testing.T, k *rsa.PrivateKey, kid string, claims map[string]any) string {
 	enc := func(v any) string { b, _ := json.Marshal(v); return base64.RawURLEncoding.EncodeToString(b) }

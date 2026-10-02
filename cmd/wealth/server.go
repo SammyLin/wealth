@@ -14,7 +14,6 @@ import (
 	"github.com/gin-gonic/gin"
 	_ "modernc.org/sqlite"
 
-	"github.com/SammyLin/wealth"
 	"github.com/SammyLin/wealth/internal/ledger"
 )
 
@@ -24,7 +23,7 @@ func main() {
 		log.Fatal(err)
 	}
 	db.SetMaxOpenConns(1)
-	if _, err := db.Exec(wealth.Schema); err != nil {
+	if err := ledger.Migrate(db); err != nil {
 		log.Fatal(err)
 	}
 
