@@ -1,5 +1,7 @@
 # wealth
 
+[![test](https://github.com/SammyLin/wealth/actions/workflows/test.yml/badge.svg)](https://github.com/SammyLin/wealth/actions/workflows/test.yml)
+
 **只記餘額的家庭資產帳本。** 不記每一筆消費,只在想到的時候更新每個帳戶的餘額,就能看到淨資產的長期趨勢、資產組成、資產負債表和房貸月付變化。
 
 *A net-worth ledger for people who don't want to track every transaction: record account balances now and then, see the long-term trend. Go + Gin, runs as a single binary with SQLite, or on Cloudflare Workers with D1.*

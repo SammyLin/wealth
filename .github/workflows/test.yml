@@ -1,0 +1,19 @@
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      - run: go test ./...
+      # the Workers build must keep compiling too
+      - run: GOOS=js GOARCH=wasm go vet ./...
+      - run: GOOS=js GOARCH=wasm go build -tags nomsgpack -o /dev/null .
