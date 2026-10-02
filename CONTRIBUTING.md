@@ -5,7 +5,7 @@
 ## 開發 / Development
 
 ```sh
-go run .            # http://127.0.0.1:8080, data in ./wealth.db
+go run ./cmd/wealth            # http://127.0.0.1:8080, data in ./wealth.db
 go test ./...
 make build-worker   # check the Cloudflare Workers (wasm) build still compiles
 ```
@@ -14,9 +14,9 @@ CI runs `go vet`, `go test` and the wasm build on every push.
 
 ## 原則 / Guidelines
 
-- **Both targets share one router.** Routes go in `app.go`; only setup that differs lives in `server.go` (SQLite) or `worker.go` (D1). D1 has no transactions and caps a statement at 100 bound parameters, so keep writes single-statement or chunked.
+- **Both targets share one router.** Routes go in `internal/ledger/router.go`; only setup that differs lives in `cmd/wealth/server.go` (SQLite) or `cmd/wealth/worker.go` (D1). D1 has no transactions and caps a statement at 100 bound parameters, so keep writes single-statement or chunked.
 - **Schema changes** go in a new file under `migrations/` (`0002_...sql`); don't edit `0001_init.sql`.
-- **Money logic needs a test** (see `loan_test.go`, `main_test.go`).
+- **Money logic needs a test** (see `internal/ledger/loan_test.go`, `model_test.go`).
 - **Frontend stays one file** (`web/index.html`) with no build step. If you use a new [lucide](https://lucide.dev) icon, regenerate the subset:
   ```sh
   curl -sLo lucide.js https://unpkg.com/lucide@0.469.0/dist/umd/lucide.js

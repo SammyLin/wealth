@@ -48,7 +48,7 @@ wealth 只做這件事。每個帳戶(銀行、證券、房子、房貸)偶爾�
 ```sh
 git clone https://github.com/SammyLin/wealth.git
 cd wealth
-go run .
+go run ./cmd/wealth
 ```
 
 打開 http://127.0.0.1:8080:
@@ -63,7 +63,7 @@ go run .
 單一執行檔 + SQLite,資料存在本機檔案。
 
 ```sh
-WEALTH_PASS=secret WEALTH_ADDR=:8080 go run .   # 對外開放時必須設密碼(basic auth)
+WEALTH_PASS=secret WEALTH_ADDR=:8080 go run ./cmd/wealth   # 對外開放時必須設密碼(basic auth)
 ```
 
 | 環境變數 | 預設 | 說明 |
@@ -94,12 +94,17 @@ sqlite3 wealth.db ".backup wealth-$(date +%F).db"
 
 | 檔案 | 內容 |
 |---|---|
-| `app.go` | 所有頁面與 API 路由(兩種部署共用) |
-| `server.go` | 自架入口:SQLite、gzip、basic auth、每日備份 |
-| `worker.go` | Workers 入口:D1、Access 驗證 |
-| `loan.go` | 寬限期只繳息 → 本息平均攤還的月付與餘額計算 |
-| `access.go` | Cloudflare Access JWT 驗證 |
-| `export.go` | CSV 匯出 |
+| `cmd/wealth/server.go` | 自架入口:SQLite、gzip、basic auth |
+| `cmd/wealth/worker.go` | Workers 入口:D1、Access 驗證 |
+| `internal/ledger/router.go` | 所有頁面與 API 路由(兩種部署共用) |
+| `internal/ledger/model.go` | 資料型別、各日期淨值序列、輸入檢查 |
+| `internal/ledger/store.go` | 設定與貸款的資料庫讀取 |
+| `internal/ledger/fx.go` | 匯率查詢 |
+| `internal/ledger/loan.go` | 寬限期只繳息 → 本息平均攤還的月付與餘額計算 |
+| `internal/ledger/access.go` | Cloudflare Access JWT 驗證 |
+| `internal/ledger/export.go` | CSV 匯出 |
+| `internal/ledger/backup.go` | 自架版的 .db 下載與每日備份 |
+| `embed.go` | 把 `web/` 和 `migrations/` 編進執行檔 |
 | `migrations/` | 資料表(兩種部署共用) |
 | `web/index.html` | 前端(單一檔案;Chart.js 捲到圖表時才載入) |
 | `web/icons.js` | 用到的 [lucide](https://lucide.dev) 圖示子集,由 `web/mkicons.cjs` 產生 |

@@ -1,152 +1,30 @@
-package main
+package ledger
 
 import (
 	"crypto/sha256"
 	"database/sql"
-	"embed"
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+
+	"github.com/SammyLin/wealth"
 )
 
-//go:embed web/index.html web/icons.js
-var webFS embed.FS
-
-//go:embed migrations/0001_init.sql
-var schema string
-
-// fileBackups is set by the self-hosted server, which can stream a .db copy and keep daily backups.
-// On Workers, D1 Time Travel covers backups instead.
-var fileBackups bool
-
-// Kinds of account. Liabilities are entered as positive numbers and subtracted.
-var kinds = map[string]bool{"bank": true, "tw_stock": true, "us_stock": true, "movable": true, "real_estate": true, "crypto": true, "liability": true}
-
-// Defaults for user-editable settings (the 設定 dialog writes the settings table).
-var defaultSettings = map[string]string{
-	"title":         "我的帳本",
-	"subtitle":      "只記餘額,看見長期趨勢",
-	"base_currency": "TWD",
-}
-
-type Account struct {
-	ID       int64   `json:"id"`
-	Name     string  `json:"name"`
-	Kind     string  `json:"kind"`
-	Currency string  `json:"currency"`
-	Archived bool    `json:"archived"`
-	Amount   float64 `json:"amount"` // latest, original currency
-	FX       float64 `json:"fx"`     // latest rate to the base currency
-	History  []Point `json:"history"`
-}
-
-type Point struct {
-	Date   string  `json:"date"`
-	Value  float64 `json:"value"` // in base currency
-	Amount float64 `json:"amount"`
-	FX     float64 `json:"fx"`
-}
-
-type Snapshot struct {
-	AccountID int64   `json:"account_id"`
-	Date      string  `json:"date"`
-	Amount    float64 `json:"amount"`
-	FX        float64 `json:"fx"`
-}
-
-type Row struct {
-	Date   string             `json:"date"`
-	Total  float64            `json:"total"`
-	ByKind map[string]float64 `json:"by_kind"`
-}
-
-type Event struct {
-	ID    int64  `json:"id"`
-	Date  string `json:"date"`
-	Title string `json:"title"`
-}
-
-// series carries each account's last known balance forward to every snapshot date,
-// so updating one account doesn't make the others look like they dropped to zero.
-// ponytail: recomputed per request, O(dates*accounts); fine for a personal ledger.
-func series(snaps []Snapshot, kindOf map[int64]string) []Row {
-	sort.SliceStable(snaps, func(i, j int) bool { return snaps[i].Date < snaps[j].Date })
-	last := map[int64]float64{}
-	var rows []Row
-	for i, s := range snaps {
-		v := s.Amount * s.FX
-		if kindOf[s.AccountID] == "liability" {
-			v = -v
-		}
-		last[s.AccountID] = v
-		if i+1 < len(snaps) && snaps[i+1].Date == s.Date {
-			continue
-		}
-		r := Row{Date: s.Date, ByKind: map[string]float64{}}
-		for id, v := range last {
-			r.ByKind[kindOf[id]] += v
-			r.Total += v
-		}
-		rows = append(rows, r)
-	}
-	return rows
-}
-
-func validDate(s string) bool { _, err := time.Parse("2006-01-02", s); return err == nil }
-
-func validCurrency(s string) bool {
-	return len(s) == 3 && strings.Trim(strings.ToUpper(s), "ABCDEFGHIJKLMNOPQRSTUVWXYZ") == ""
-}
-
-func settings(db *sql.DB) (map[string]string, error) {
-	out := map[string]string{}
-	for k, v := range defaultSettings {
-		out[k] = v
-	}
-	rows, err := db.Query(`SELECT key, value FROM settings`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var k, v string
-		if err := rows.Scan(&k, &v); err != nil {
-			return nil, err
-		}
-		out[k] = v
-	}
-	return out, rows.Err()
-}
-
-func validLoan(l Loan) string {
-	switch {
-	case strings.TrimSpace(l.Name) == "" || l.Principal <= 0:
-		return "名稱和本金必填"
-	case l.Rate < 0 || l.Rate > 0.2:
-		return "年利率要在 0–20% 之間"
-	case l.TotalMonths <= 0 || l.TotalMonths > 600 || l.GraceMonths < 0 || l.GraceMonths >= l.TotalMonths:
-		return "總期數 1–600 個月,寬限期要小於總期數"
-	case !validDate(l.Start):
-		return "起始日期格式錯誤"
-	}
-	return ""
-}
-
-// newRouter holds every page and API route. server.go (local SQLite) and worker.go
+// New holds every page and API route. cmd/wealth's server.go (local SQLite) and worker.go
 // (Cloudflare Workers + D1) only differ in how they open db and serve the router.
-func newRouter(db *sql.DB, middleware ...gin.HandlerFunc) *gin.Engine {
+// fileBackups tells the UI a .db download and daily backups exist (self-hosted only;
+// on Workers, D1 Time Travel covers backups instead).
+func New(db *sql.DB, fileBackups bool, middleware ...gin.HandlerFunc) *gin.Engine {
 	r := gin.New()
 	r.Use(append([]gin.HandlerFunc{gin.Recovery()}, middleware...)...)
 
 	// icons.js is cached for a day, so the page links it by content hash: a new build means a new URL.
-	icons, _ := webFS.ReadFile("web/icons.js")
-	page, _ := webFS.ReadFile("web/index.html")
+	icons, _ := wealth.Web.ReadFile("web/icons.js")
+	page, _ := wealth.Web.ReadFile("web/index.html")
 	sum := sha256.Sum256(icons)
 	page = []byte(strings.Replace(string(page), `src="/icons.js"`, fmt.Sprintf(`src="/icons.js?v=%x"`, sum[:6]), 1))
 	r.GET("/", func(c *gin.Context) {
@@ -482,42 +360,4 @@ func fail(c *gin.Context, err error) bool {
 		return true
 	}
 	return false
-}
-
-// fxClient is replaced on Workers, where outbound requests must go through fetch().
-var fxClient = &http.Client{Timeout: 8 * time.Second}
-
-// fetchFX returns how many units of base one unit of cur was worth on date (YYYY-MM-DD; today or later = latest).
-// Source: fawazahmed0/currency-api (free, no key, daily history from 2024-03).
-func fetchFX(cur, base, date string) (float64, error) {
-	cur, base = strings.ToLower(cur), strings.ToLower(base)
-	if !validCurrency(cur) || !validCurrency(base) {
-		return 0, fmt.Errorf("bad currency")
-	}
-	if !validDate(date) || date >= time.Now().Format("2006-01-02") {
-		date = "latest"
-	}
-	var lastErr error
-	for _, u := range []string{
-		"https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@" + date + "/v1/currencies/" + cur + ".json",
-		"https://" + date + ".currency-api.pages.dev/v1/currencies/" + cur + ".json",
-	} {
-		res, err := fxClient.Get(u)
-		if err != nil {
-			lastErr = err
-			continue
-		}
-		var body map[string]json.RawMessage
-		err = json.NewDecoder(res.Body).Decode(&body)
-		res.Body.Close()
-		var rates map[string]float64
-		if err == nil {
-			err = json.Unmarshal(body[cur], &rates)
-		}
-		if err == nil && rates[base] > 0 {
-			return rates[base], nil
-		}
-		lastErr = fmt.Errorf("no rate for %s/%s on %s", cur, base, date)
-	}
-	return 0, lastErr
 }

@@ -14,6 +14,8 @@ import (
 	"github.com/syumai/workers-go/cloudflare"
 	_ "github.com/syumai/workers-go/cloudflare/d1"
 	"github.com/syumai/workers-go/cloudflare/fetch"
+
+	"github.com/SammyLin/wealth/internal/ledger"
 )
 
 func main() {
@@ -21,9 +23,9 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fxClient = fetch.NewClient().HTTPClient(fetch.RedirectModeFollow)
+	ledger.FXClient = fetch.NewClient().HTTPClient(fetch.RedirectModeFollow)
 	gin.SetMode(gin.ReleaseMode)
-	workers.Serve(newRouter(db, accessFromEnv()))
+	workers.Serve(ledger.New(db, false, accessFromEnv()))
 }
 
 // accessFromEnv fails closed: without ACCESS_TEAM_DOMAIN + ACCESS_AUD the Worker refuses to serve,
@@ -36,7 +38,7 @@ func accessFromEnv() gin.HandlerFunc {
 			team, aud := cloudflare.Getenv("ACCESS_TEAM_DOMAIN"), cloudflare.Getenv("ACCESS_AUD")
 			switch {
 			case team != "" && aud != "":
-				guard = accessGuard(team, aud, fxClient)
+				guard = ledger.AccessGuard(team, aud, ledger.FXClient)
 			case cloudflare.Getenv("ALLOW_PUBLIC") == "1":
 				guard = func(c *gin.Context) { c.Next() }
 			default:

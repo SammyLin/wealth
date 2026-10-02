@@ -1,4 +1,4 @@
-module wealth
+module github.com/SammyLin/wealth
 
 go 1.26.0
 

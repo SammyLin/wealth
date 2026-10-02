@@ -1,4 +1,4 @@
-package main
+package ledger
 
 import (
 	"crypto"
@@ -17,11 +17,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// accessGuard rejects any request without a valid Cloudflare Access JWT for this app.
+// AccessGuard rejects any request without a valid Cloudflare Access JWT for this app.
 // Access already blocks strangers at the edge; this is the second lock in case a route,
 // preview URL or misconfigured policy ever lets a request reach the Worker directly.
 // team: "yourteam.cloudflareaccess.com", aud: the Access application's AUD tag.
-func accessGuard(team, aud string, client *http.Client) gin.HandlerFunc {
+func AccessGuard(team, aud string, client *http.Client) gin.HandlerFunc {
 	keys := &jwks{url: "https://" + team + "/cdn-cgi/access/certs", client: client}
 	return func(c *gin.Context) {
 		tok := c.GetHeader("Cf-Access-Jwt-Assertion")

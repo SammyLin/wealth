@@ -1,4 +1,4 @@
-package main
+package ledger
 
 import (
 	"bytes"
@@ -8,23 +8,6 @@ import (
 	"sort"
 	"strconv"
 )
-
-func listLoans(db *sql.DB) ([]Loan, error) {
-	rows, err := db.Query(`SELECT id, account_id, name, principal, rate, start, grace_months, total_months FROM loans ORDER BY start, id`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	loans := []Loan{}
-	for rows.Next() {
-		var l Loan
-		if err := rows.Scan(&l.ID, &l.AccountID, &l.Name, &l.Principal, &l.Rate, &l.Start, &l.GraceMonths, &l.TotalMonths); err != nil {
-			return nil, err
-		}
-		loans = append(loans, l)
-	}
-	return loans, rows.Err()
-}
 
 var kindLabel = map[string]string{"bank": "銀行", "tw_stock": "台股", "us_stock": "美股", "movable": "動產",
 	"real_estate": "不動產", "crypto": "加密貨幣", "liability": "負債"}
