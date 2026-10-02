@@ -1,0 +1,8 @@
+wealth
+*.db
+*.db-*
+backups/
+build/
+wrangler.local.jsonc
+.wrangler/
+node_modules/
