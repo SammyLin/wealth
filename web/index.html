@@ -57,12 +57,13 @@ button { font:inherit; color:inherit; cursor:pointer; border:none; background:no
 .icon-btn:hover { background:var(--paper-2); color:var(--ink); }
 .icon-btn.danger:hover { color:var(--down); }
 .icon-btn svg { width:16px; height:16px; }
+.lang-btn { width:auto; min-width:34px; padding:0 8px; white-space:nowrap; font-size:.75rem; font-weight:500; letter-spacing:.04em; }
 
 /* Hero */
 .hero { padding:56px 0 40px; display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); gap:56px; align-items:end; }
 .eyebrow { margin:0 0 8px; font-size:.8rem; letter-spacing:.14em; color:var(--ink-3); display:flex; gap:12px; align-items:center; }
 .eyebrow::before { content:""; width:28px; height:1px; background:var(--gold-2); }
-.net { margin:0; font-family:var(--num); font-weight:300; font-variation-settings:"opsz" 144; font-size:clamp(3.1rem,8.6vw,6.6rem);
+.net { margin:0; font-family:var(--num); font-weight:300; font-variation-settings:"opsz" 144; font-size:calc(clamp(3.1rem,8.6vw,6.6rem) * var(--fit,1));
   line-height:.95; letter-spacing:-.035em; display:flex; align-items:baseline; gap:.12em; white-space:nowrap; }
 .net .cur { font-size:.28em; letter-spacing:.02em; color:var(--ink-3); font-weight:400; transform:translateY(-1.6em); }
 .odo { display:inline-flex; overflow:hidden; height:1em; line-height:1; padding-bottom:.02em; }
@@ -83,6 +84,8 @@ button { font:inherit; color:inherit; cursor:pointer; border:none; background:no
 .balance p { margin:0 0 18px; font-size:.8rem; color:var(--ink-3); }
 .bb-row { display:grid; grid-template-columns:44px 1fr; gap:12px; align-items:center; margin-bottom:12px; }
 .bb-k { font-size:.8rem; color:var(--ink-2); }
+html[lang=en] .bb-row { grid-template-columns:68px 1fr; }
+html[lang=en] .bb-legend { margin-left:80px; }
 .bb-bar { display:flex; gap:2px; height:30px; }
 .bb-seg { height:100%; border-radius:4px; transform-origin:left; animation:grow .9s var(--ease) both; position:relative; min-width:2px; }
 .bb-seg.net { background:repeating-linear-gradient(135deg, var(--gold-2) 0 6px, #d99d1c 6px 12px); display:flex; align-items:center; padding:0 10px; overflow:hidden; }
@@ -303,6 +306,7 @@ input:disabled { background:var(--paper-2); color:var(--ink-3); }
     <div class="top-acts">
       <button class="icon-btn" onclick="openSettings()" aria-label="設定" title="設定"><i data-lucide="settings"></i></button>
       <button class="icon-btn" onclick="$('#dlg-export').showModal()" aria-label="匯出資料" title="匯出資料"><i data-lucide="download"></i></button>
+      <button class="icon-btn lang-btn" id="btn-lang" onclick="setLang()"></button>
       <button id="btn-balance" class="btn btn-ink"><i data-lucide="pen-line"></i>記一筆</button>
     </div>
   </div>
@@ -423,6 +427,116 @@ input:disabled { background:var(--paper-2); color:var(--ink-3); }
 
 <script src="/icons.js"></script>
 <script>
+const $ = s => document.querySelector(s);
+// UI language: ?lang= > saved choice > browser. Strings are looked up by their Chinese text;
+// anything missing from EN falls back to Chinese.
+const LANG = (() => {
+  const q = new URLSearchParams(location.search).get('lang');
+  if (q) localSet('lang', q);
+  return (q || localGet('lang') || (navigator.language.startsWith('zh') ? 'zh' : 'en')) === 'en' ? 'en' : 'zh';
+})();
+const EN = {
+  // static page
+  '跳到內容':'Skip to content', '回到頂端':'Back to top', '設定':'Settings', '匯出資料':'Export data', '記一筆':'Record', '載入中…':'Loading…',
+  '資料只存在這台主機的 SQLite。外幣以當日中間價換算;沒更新的帳戶沿用上一筆。':'Data stays on this host. Foreign currencies use that day\'s mid rate; accounts you don\'t update carry their last balance forward.',
+  '取消':'Cancel', '關閉':'Close', '日期':'Date', '儲存':'Save', '新增':'Add', '名稱':'Name', '類別':'Class', '幣別':'Currency',
+  '改有變動的帳戶就好,其他會沿用上一筆。':'Only change the accounts that moved; the rest carry forward.',
+  '新增帳戶':'Add account', '建立後到「記一筆」填第一筆餘額。':'After creating it, enter its first balance under “Record”.',
+  '例:活存、證券戶、房子、房貸':'e.g. checking, brokerage, home, mortgage',
+  '新增貸款':'Add loan', '一筆房貸若分好幾段(不同利率或起始日),每段各新增一次。':'If a mortgage has several tranches (different rate or start date), add each one.',
+  '例:房貸 第一段、車貸':'e.g. mortgage tranche 1, car loan', '屬於哪個負債帳戶':'Liability account', '本金(元)':'Principal',
+  '年利率(%)':'Annual rate (%)', '起始日(撥款日)':'Start (disbursement) date', '寬限期(月)':'Interest-only (months)', '總期數(月)':'Term (months)',
+  '這個帳本叫什麼、用哪個幣別當基準。':'Name this ledger and pick its base currency.', '帳本名稱':'Ledger name', '我的帳本':'My ledger',
+  '副標':'Subtitle', '只記餘額,看見長期趨勢':'Track balances, see the long-term trend', '基準幣別':'Base currency',
+  '隨時可以把資料帶走。':'Take your data with you anytime.', '試算表 CSV':'Spreadsheet CSV',
+  '跟原本 Excel 一樣:帳戶一列、日期一欄,附各類小計與淨資產。Excel、Numbers 直接開。':'One row per account, one column per date, with subtotals and net worth. Opens in Excel or Numbers.',
+  '完整備份 .db':'Full backup .db', '包含帳戶、每筆餘額、匯率、大事、貸款。要還原時把它換成 wealth.db。':'Accounts, every balance, rates, milestones and loans. To restore, swap it in as wealth.db.',
+  '伺服器每天自動備份一份到':'The server backs up daily to', ',保留最近 30 天。':', keeping the last 30 days.',
+  '資料存在 Cloudflare D1,內建 30 天內任一時間點還原(Time Travel)。':'Data lives in Cloudflare D1, restorable to any point in the last 30 days (Time Travel).',
+  '新增大事':'Add milestone', '會在趨勢圖上畫一條虛線,方便對照淨資產的轉折。':'Draws a dashed line on the trend chart so you can match it to turns in net worth.',
+  '事件':'Milestone', '例:買房、換工作、年終入帳':'e.g. bought a home, new job, year-end bonus',
+  // kinds and totals
+  '銀行':'Bank', '台股':'TW stocks', '美股':'US stocks', '動產':'Personal property', '不動產':'Real estate', '加密貨幣':'Crypto', '負債':'Liabilities',
+  '資產':'Assets', '淨資產':'Net worth', '全部':'All', '合計':'Total', '今天':'Today', '元':'',
+  // main page
+  '連不到伺服器,確認 wealth 程式還在執行':'Can\'t reach the server. Check that wealth is still running.', '伺服器回應 {}':'Server responded {}',
+  '讀不到資料':'Couldn\'t load data', '再試一次':'Try again', '從第一個帳戶開始':'Start with your first account',
+  '銀行、台股、美股、房子、車、房貸都算。之後每次只要更新餘額。':'Bank, stocks, home, car, mortgage: it all counts. After that you only update balances.',
+  '淨資產 · 截至 {}':'Net worth · as of {}', '尚無紀錄':'no records yet', '{} 元':'{}', '較上次 {}':'vs {}', '自 {} 起':'since {}', '近 {}':'last {}',
+  '淨資產趨勢':'Net worth trend', '每一次記錄的淨資產;虛線是你標記的大事。':'Net worth at every record; dashed lines mark your milestones.',
+  '時間範圍':'Time range', '清除自訂範圍':'Clear custom range', '自訂':'Custom', '淨資產組成':'Net worth breakdown',
+  '淨資產趨勢折線圖,{} 筆紀錄':'Net worth trend line chart, {} records', '在圖上左右拖曳可放大一段期間,雙擊還原':'Drag across the chart to zoom into a period; double-click to reset',
+  '資產組成':'Asset mix', '各類資產疊起來的高度。點類別只看那幾類,可複選。':'Every asset class, stacked. Pick classes to show only those.',
+  '篩選資產類別':'Filter asset classes', '各類資產堆疊面積圖':'Stacked area chart of asset classes',
+  '資產負債表':'Balance sheet', '左右兩邊合計相等:資產 = 負債 + 淨資產。':'Both sides add up: assets = liabilities + net worth.',
+  '房貸':'Mortgage', '每個月要繳多少、寬限期什麼時候結束、月付什麼時候會跳。':'What you pay each month, when interest-only ends, and when the payment jumps.',
+  '大事記':'Milestones', '買房、換工作、年終這類轉折,會畫在趨勢圖上。':'Turning points like buying a home, a new job or a bonus, drawn on the trend chart.',
+  '編輯 {}':'Edit {}', '刪除 {}':'Delete {}',
+  '還沒有大事。像「買房」這種會讓曲線轉彎的事,記下來以後回頭看更清楚。':'No milestones yet. Note things like buying a home that bend the curve; they make the trend easier to read later.',
+  // loans
+  '還沒有登記貸款。新增後會算出每月月付、寬限期結束日和月付變化。':'No loans yet. Add one to see monthly payments, when interest-only ends, and how payments change.',
+  '開始繳':'starts', '繳清':'paid off', '寬限期結束,開始還本金':'interest-only ends, principal starts', '月付變動':'payment changes', '、':', ', ';':'; ',
+  '「{}」帳上負債 {},已登記的貸款剩餘本金只有 {},還差 <b>{}</b> 沒登記。補上那筆貸款(例如新房子)月付才會完整。':'“{}” shows {} owed, but registered loans only cover {}: <b>{}</b> is unregistered. Add that loan (e.g. a new home) for complete payments.',
+  '下一個寬限期結束:{} · {}(還有 {} 天)':'Next interest-only end: {} · {} ({} days left)', '所有貸款都已經在還本金了':'Every loan is already repaying principal',
+  '月付變化':'Payment changes', ' · 已生效':' · in effect', '/月':'/mo', '之後月付都不會再變。':'Payments stay the same from here on.',
+  '每月房貸月付金額,從第一期到繳清':'Monthly mortgage payments, first to last',
+  '寬限期只繳利息;之後本息平均攤還。實際金額以銀行通知為準。':'Interest only during the grace period, level payments after. Your bank\'s figures are authoritative.',
+  '貸款':'Loan', '本金':'Principal', '利率':'Rate', '寬限期結束':'Interest-only ends', '寬限期月付':'Interest-only payment', '攤還月付':'Level payment',
+  '剩餘本金':'Balance', '操作':'Actions', '寬限期中':'Interest-only', '還本中':'Repaying', '已繳清':'Paid off',
+  '{} 起 · {} 年':'from {} · {} yrs', '還有 {} 天':'in {} days', '{} 繳清':'paid off {}',
+  '(不連結)':'(not linked)', '編輯貸款':'Edit loan', '寬限期月付 <b>{}</b> → 之後 <b>{}</b>':'Interest-only <b>{}</b> → then <b>{}</b>', '月付 <b>{}</b>':'Monthly <b>{}</b>',
+  '本金要是大於 0 的數字':'Principal must be a number above 0', '已更新貸款「{}」':'Updated loan “{}”', '已新增貸款「{}」':'Added loan “{}”',
+  '刪除貸款「{}」?':'Delete loan “{}”?', '只會刪掉這筆貸款的設定(月付計算),帳上的負債餘額不受影響。':'Only the loan setup (payment math) is removed; the liability balance stays.',
+  '刪除':'Delete', '已刪除「{}」':'Deleted “{}”',
+  // balance bar and sheet
+  '資產負債平衡':'Assets vs liabilities', '你真正擁有的':'What you really own', '上排是資產,下排是負債;金色那段就是淨資產。':'Top bar is assets, bottom is liabilities; the gold part is your net worth.',
+  '資不抵債':'Underwater', '總資產':'Total assets', '負債比':'Debt ratio',
+  '{} 個帳戶':'{} accounts', '資產合計':'Total assets', '負債與淨資產':'Liabilities & net worth', '{} 筆負債':'{} liabilities', '沒有負債。':'No liabilities.',
+  '負債 + 淨資產':'Liabilities + net worth', '已封存 {} 個帳戶':'{} archived accounts', '尚未記錄':'Not recorded yet', '編輯、看歷史紀錄':'Edit, see history',
+  '圖表元件載入失敗,檢查網路後重新整理':'Chart library failed to load. Check your connection and reload.',
+  // accounts, events, settings
+  '封存「{}」?':'Archive “{}”?', '封存後會收進資產負債表下方的「已封存」,歷史紀錄仍保留在趨勢圖裡。':'It moves to “Archived” under the balance sheet; its history stays in the trend.',
+  '<br><b style="color:var(--down)">目前餘額還有 {} {},封存後仍會算進淨資產。帳戶已結清的話,先記一筆 0 再封存。</b>':'<br><b style="color:var(--down)">It still holds {} {}, which keeps counting toward net worth. If the account is closed, record a 0 first, then archive.</b>',
+  '封存':'Archive', '已封存「{}」':'Archived “{}”', '已取消封存「{}」':'Unarchived “{}”', '刪除這件大事?':'Delete this milestone?',
+  '已經有餘額紀錄,幣別不能改':'Balances exist, so the currency is locked', '編輯帳戶':'Edit account', '改名稱、類別,或修正過去記錯的餘額。':'Rename, change class, or fix past balances.',
+  '歷史紀錄 <small>{} 筆 · 改完按儲存</small>':'History <small>{} records · save when done</small>', '{} 餘額':'{} balance', '{} 匯率':'{} rate',
+  '刪除 {} 這筆':'Delete the {} record', '還沒有紀錄。':'No records yet.', '取消封存':'Unarchive', '刪除帳戶':'Delete account',
+  '已新增「{}」,到「記一筆」填餘額':'Added “{}”. Enter its balance under “Record”.', '{} 的餘額不是數字':'The {} balance isn\'t a number',
+  '已更新「{}」':'Updated “{}”', ',修正 {} 筆紀錄':', fixed {} records', '刪除 {} 這筆紀錄?':'Delete the {} record?',
+  '趨勢圖會改用前一筆餘額接續。':'The trend will carry the previous balance forward.', '已刪除 {} 的紀錄':'Deleted the {} record', '刪除「{}」?':'Delete “{}”?',
+  '會一起刪掉它的 <b>{} 筆</b>餘額紀錄,淨資產和趨勢都會重算,無法復原。<br>只是不想再看到的話,用「封存」就好。':'This also deletes its <b>{} balance records</b>, and net worth and trends are recalculated. It can\'t be undone.<br>To just hide it, use “Archive”.',
+  '永久刪除':'Delete forever', '已經有餘額紀錄,基準幣別不能再改。':'Balances exist, so the base currency is locked.',
+  '所有金額都換算成這個幣別。開始記帳後就不能改。':'Every amount converts to this currency. It locks once you record a balance.', '已儲存設定':'Settings saved',
+  '編輯大事':'Edit milestone', '已更新':'Updated', '已加到大事記':'Added to milestones',
+  // record dialog
+  '上次 {} {}':'last {} {}', '{} 餘額({})':'{} balance ({})', '{} 匯率 {}/{}':'{} rate {}/{}', '{} 對淨資產':'{} to net worth',
+  '淨資產將是 <b>{}</b>':'Net worth becomes <b>{}</b>', '{} {}/{},自動帶入':'{} {}/{}, filled in automatically',
+  '「{}」的餘額不是數字':'The “{}” balance isn\'t a number', '「{}」的匯率要大於 0':'The “{}” rate must be above 0',
+  '至少填一個帳戶的餘額':'Fill in at least one balance', '已記錄 {} · 淨資產 {}':'Recorded {} · net worth {}',
+  // server messages
+  '伺服器錯誤':'Server error', '文字太長':'Text too long', '類別不正確':'Invalid class', '名稱不能空白':'Name can\'t be blank',
+  '名稱和類別必填':'Name and class are required', '日期或匯率不正確':'Invalid date or rate', '日期和事件名稱必填':'Date and milestone are required',
+  '幣別要是三個英文字母':'Currency must be three letters', '幣別只能在還沒記錄餘額前修改':'Currency can only change before any balance is recorded',
+  '需要透過 Cloudflare Access 登入':'Sign in through Cloudflare Access', '基準幣別要是三個英文字母,例如 TWD、USD':'Base currency must be three letters, e.g. TWD, USD',
+  '已經有餘額紀錄,基準幣別不能再改(舊匯率都是對原本的幣別)':'Balances exist, so the base currency can\'t change (old rates are relative to it)',
+  'id 不正確':'Invalid id', '名稱和本金必填':'Name and principal are required', '年利率要在 0–20% 之間':'Annual rate must be 0–20%',
+  '總期數 1–600 個月,寬限期要小於總期數':'Term is 1–600 months, and interest-only must be shorter', '起始日期格式錯誤':'Invalid start date',
+};
+const t = s => LANG === 'en' && EN[s] != null ? EN[s] : s;
+const pick = (zh, en) => LANG === 'en' ? en : zh;
+// T`較上次 ${d}` looks up "較上次 {}" and fills the values back in, in order.
+const T = (strs, ...v) => { let i = 0; return t(strs.join('{}')).replace(/\{\}/g, () => v[i++]); };
+window.setLang = () => { localSet('lang', pick('en', 'zh')); location.search = ''; };
+$('#btn-lang').textContent = pick('EN', '中文');
+$('#btn-lang').title = pick('English', '中文');
+if (LANG === 'en') {
+  document.documentElement.lang = 'en';
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  for (let n; (n = w.nextNode());) { const k = n.nodeValue.trim(); if (k && EN[k] != null) n.nodeValue = n.nodeValue.replace(k, EN[k]); }
+  for (const a of ['placeholder', 'aria-label', 'title'])
+    document.querySelectorAll(`[${a}]`).forEach(el => { const k = el.getAttribute(a); if (EN[k] != null) el.setAttribute(a, EN[k]); });
+}
+
 // Categorical slots in fixed order (dataviz reference palette). Color follows the kind, never rank.
 const KINDS = {
   bank:        { label:'銀行',     color:'#2a78d6' },
@@ -433,15 +547,17 @@ const KINDS = {
   crypto:      { label:'加密貨幣', color:'#4a3aa7' },
   liability:   { label:'負債',     color:'#e34948' },
 };
+for (const k in KINDS) KINDS[k].label = t(KINDS[k].label);
 const ASSET_KINDS = Object.keys(KINDS).filter(k => k !== 'liability');
 const RANGES = { '3M':90, '6M':182, '1Y':365, '全部':0 };
 const BASE = () => state?.settings?.base_currency || 'TWD';
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 let zoom = null, stackSel = new Set(), state, range = localGet('range') || '1Y', charts = {};
 
-const $ = s => document.querySelector(s);
 const fmt = n => Math.round(n).toLocaleString('zh-TW');
-const short = n => Math.abs(n) >= 1e8 ? (n/1e8).toFixed(2)+' 億' : Math.abs(n) >= 1e4 ? (n/1e4).toFixed(1)+' 萬' : fmt(n);
+const short = n => LANG === 'en'
+  ? Math.abs(n) >= 1e9 ? (n/1e9).toFixed(2)+'B' : Math.abs(n) >= 1e6 ? (n/1e6).toFixed(2)+'M' : Math.abs(n) >= 1e3 ? (n/1e3).toFixed(1)+'K' : fmt(n)
+  : Math.abs(n) >= 1e8 ? (n/1e8).toFixed(2)+' 億' : Math.abs(n) >= 1e4 ? (n/1e4).toFixed(1)+' 萬' : fmt(n);
 const signed = n => (n > 0 ? '+' : n < 0 ? '−' : '') + short(Math.abs(n));
 const dot = k => `<span class="dot" style="background:${KINDS[k].color}"></span>`;
 const today = () => new Date(Date.now() - new Date().getTimezoneOffset()*6e4).toISOString().slice(0,10);
@@ -454,25 +570,25 @@ const icons = () => lucide.createIcons({ attrs:{ 'aria-hidden':'true' } });
 async function api(method, path, body) {
   let r;
   try { r = await fetch(path, { method, headers:{'Content-Type':'application/json'}, body: body && JSON.stringify(body) }); }
-  catch { throw new Error('連不到伺服器,確認 wealth 程式還在執行'); }
-  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `伺服器回應 ${r.status}`);
+  catch { throw new Error(t('連不到伺服器,確認 wealth 程式還在執行')); }
+  if (!r.ok) throw new Error(t((await r.json().catch(() => ({}))).error || '') || T`伺服器回應 ${r.status}`);
   return r.status === 204 ? null : r.json();
 }
 
 async function load() {
   try { state = await api('GET', '/api/state'); }
   catch (e) {
-    $('#app').innerHTML = `<div class="state"><i data-lucide="cloud-off"></i><h2>讀不到資料</h2><p>${esc(e.message)}</p>
-      <button class="btn btn-ink" onclick="load()"><i data-lucide="rotate-cw"></i>再試一次</button></div>`;
+    $('#app').innerHTML = `<div class="state"><i data-lucide="cloud-off"></i><h2>${t('讀不到資料')}</h2><p>${esc(e.message)}</p>
+      <button class="btn btn-ink" onclick="load()"><i data-lucide="rotate-cw"></i>${t('再試一次')}</button></div>`;
     return icons();
   }
   render();
 }
 
 function toast(html) {
-  const t = $('#toast');
-  t.innerHTML = html; icons(); t.classList.add('show');
-  clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('show'), 3600);
+  const el = $('#toast');
+  el.innerHTML = html; icons(); el.classList.add('show');
+  clearTimeout(toast.t); toast.t = setTimeout(() => el.classList.remove('show'), 3600);
 }
 
 function inRange(rows) {
@@ -492,15 +608,15 @@ function inRange(rows) {
 
 function render() {
   const app = $('#app');
-  $('#brand-title').textContent = document.title = state.settings.title;
-  $('#brand-sub').textContent = state.settings.subtitle;
+  $('#brand-title').textContent = document.title = t(state.settings.title);
+  $('#brand-sub').textContent = t(state.settings.subtitle);
   document.querySelectorAll('[data-file-backup]').forEach(e => e.hidden = !state.file_backups);
   document.querySelectorAll('[data-d1-backup]').forEach(e => e.hidden = state.file_backups);
   Object.values(charts).forEach(c => c.destroy()); charts = {};
   if (!state.accounts.length) {
-    app.innerHTML = `<div class="state"><i data-lucide="sprout"></i><h2>從第一個帳戶開始</h2>
-      <p>銀行、台股、美股、房子、車、房貸都算。之後每次只要更新餘額。</p>
-      <button class="btn btn-ink" onclick="openAccount()"><i data-lucide="plus"></i>新增帳戶</button></div>`;
+    app.innerHTML = `<div class="state"><i data-lucide="sprout"></i><h2>${t('從第一個帳戶開始')}</h2>
+      <p>${t('銀行、台股、美股、房子、車、房貸都算。之後每次只要更新餘額。')}</p>
+      <button class="btn btn-ink" onclick="openAccount()"><i data-lucide="plus"></i>${t('新增帳戶')}</button></div>`;
     return icons();
   }
   const s = state.series, rows = inRange(s);
@@ -512,12 +628,12 @@ function render() {
   app.innerHTML = `
   <section class="hero" aria-labelledby="net-label">
     <div>
-      <p class="eyebrow" id="net-label">淨資產 · 截至 ${pretty(last.date) || '尚無紀錄'}</p>
-      <h1 class="net"><span class="cur">${esc(BASE())}</span><span class="sr">${fmt(last.total)} 元</span><span class="odo" id="odo" aria-hidden="true"></span></h1>
+      <p class="eyebrow" id="net-label">${T`淨資產 · 截至 ${pretty(last.date) || t('尚無紀錄')}`}</p>
+      <h1 class="net" style="--fit:${Math.min(1, 9 / fmt(last.total).length)}"><span class="cur">${esc(BASE())}</span><span class="sr">${T`${fmt(last.total)} 元`}</span><span class="odo" id="odo" aria-hidden="true"></span></h1>
       <div class="deltas">
-        ${prev ? delta(last.total - prev.total, `較上次 ${pretty(prev.date)}`) : ''}
+        ${prev ? delta(last.total - prev.total, T`較上次 ${pretty(prev.date)}`) : ''}
         ${zoom ? (sel.length > 1 ? delta(sel.at(-1).total - sel[0].total, `${pretty(sel[0].date)} → ${pretty(sel.at(-1).date)}`) : '')
-          : first && first !== last ? delta(last.total - first.total, range === '全部' ? `自 ${pretty(first.date)} 起` : `近 ${range}`) : ''}
+          : first && first !== last ? delta(last.total - first.total, range === '全部' ? T`自 ${pretty(first.date)} 起` : T`近 ${range}`) : ''}
       </div>
     </div>
     ${balanceBar(last, assets, debt)}
@@ -525,54 +641,54 @@ function render() {
 
   <section class="sec reveal" aria-labelledby="h-trend">
     <div class="sec-head">
-      <div><div class="sec-title"><span class="sec-num">01</span><h2 id="h-trend">淨資產趨勢</h2></div>
-        <p class="sec-desc">每一次記錄的淨資產;虛線是你標記的大事。</p></div>
-      <div class="chips" role="group" aria-label="時間範圍">${Object.keys(RANGES).map(r =>
-        `<button class="chip" aria-pressed="${r===range && !zoom}" onclick="setRange('${r}')">${r}</button>`).join('')}${zoom
-        ? `<button class="chip" aria-pressed="true" onclick="setRange(range)" title="清除自訂範圍"><i data-lucide="x"></i>自訂</button>` : ''}</div>
+      <div><div class="sec-title"><span class="sec-num">01</span><h2 id="h-trend">${t('淨資產趨勢')}</h2></div>
+        <p class="sec-desc">${t('每一次記錄的淨資產;虛線是你標記的大事。')}</p></div>
+      <div class="chips" role="group" aria-label="${t('時間範圍')}">${Object.keys(RANGES).map(r =>
+        `<button class="chip" aria-pressed="${r===range && !zoom}" onclick="setRange('${r}')">${t(r)}</button>`).join('')}${zoom
+        ? `<button class="chip" aria-pressed="true" onclick="setRange(range)" title="${t('清除自訂範圍')}"><i data-lucide="x"></i>${t('自訂')}</button>` : ''}</div>
     </div>
-    <div class="formula" aria-label="淨資產組成">= ${Object.keys(KINDS).filter(k => last.by_kind[k]).map((k, i) =>
+    <div class="formula" aria-label="${t('淨資產組成')}">= ${Object.keys(KINDS).filter(k => last.by_kind[k]).map((k, i) =>
       `${k === 'liability' ? '<span class="op">−</span>' : i ? '<span class="op">+</span>' : ''}<span>${dot(k)} ${KINDS[k].label} <b>${short(Math.abs(last.by_kind[k]))}</b></span>`).join('')}</div>
-    <div class="plot"><canvas id="c-net" role="img" aria-label="淨資產趨勢折線圖,${rows.length} 筆紀錄"></canvas></div>
-    <p class="hint"><i data-lucide="move-horizontal"></i>在圖上左右拖曳可放大一段期間,雙擊還原</p>
+    <div class="plot"><canvas id="c-net" role="img" aria-label="${T`淨資產趨勢折線圖,${rows.length} 筆紀錄`}"></canvas></div>
+    <p class="hint"><i data-lucide="move-horizontal"></i>${t('在圖上左右拖曳可放大一段期間,雙擊還原')}</p>
   </section>
 
   <section class="sec reveal" aria-labelledby="h-mix">
     <div class="sec-head">
-      <div><div class="sec-title"><span class="sec-num">02</span><h2 id="h-mix">資產組成</h2></div>
-        <p class="sec-desc">各類資產疊起來的高度。點類別只看那幾類,可複選。</p></div>
-      <div class="chips" id="stack-chips" role="group" aria-label="篩選資產類別"></div>
+      <div><div class="sec-title"><span class="sec-num">02</span><h2 id="h-mix">${t('資產組成')}</h2></div>
+        <p class="sec-desc">${t('各類資產疊起來的高度。點類別只看那幾類,可複選。')}</p></div>
+      <div class="chips" id="stack-chips" role="group" aria-label="${t('篩選資產類別')}"></div>
     </div>
-    <div class="plot"><canvas id="c-stack" role="img" aria-label="各類資產堆疊面積圖"></canvas></div>
+    <div class="plot"><canvas id="c-stack" role="img" aria-label="${t('各類資產堆疊面積圖')}"></canvas></div>
   </section>
 
   <section class="sec reveal" aria-labelledby="h-sheet">
     <div class="sec-head">
-      <div><div class="sec-title"><span class="sec-num">03</span><h2 id="h-sheet">資產負債表</h2></div>
-        <p class="sec-desc">左右兩邊合計相等:資產 = 負債 + 淨資產。</p></div>
-      <button class="btn btn-line" onclick="openAccount()"><i data-lucide="plus"></i>新增帳戶</button>
+      <div><div class="sec-title"><span class="sec-num">03</span><h2 id="h-sheet">${t('資產負債表')}</h2></div>
+        <p class="sec-desc">${t('左右兩邊合計相等:資產 = 負債 + 淨資產。')}</p></div>
+      <button class="btn btn-line" onclick="openAccount()"><i data-lucide="plus"></i>${t('新增帳戶')}</button>
     </div>
     ${sheet(last, assets, debt)}
   </section>
 
   <section class="sec reveal" aria-labelledby="h-loan">
     <div class="sec-head">
-      <div><div class="sec-title"><span class="sec-num">04</span><h2 id="h-loan">房貸</h2></div>
-        <p class="sec-desc">每個月要繳多少、寬限期什麼時候結束、月付什麼時候會跳。</p></div>
-      <button class="btn btn-line" onclick="openLoan()"><i data-lucide="plus"></i>新增貸款</button>
+      <div><div class="sec-title"><span class="sec-num">04</span><h2 id="h-loan">${t('房貸')}</h2></div>
+        <p class="sec-desc">${t('每個月要繳多少、寬限期什麼時候結束、月付什麼時候會跳。')}</p></div>
+      <button class="btn btn-line" onclick="openLoan()"><i data-lucide="plus"></i>${t('新增貸款')}</button>
     </div>
     ${loanSection()}
   </section>
 
   <section class="sec reveal" aria-labelledby="h-events">
     <div class="sec-head">
-      <div><div class="sec-title"><span class="sec-num">05</span><h2 id="h-events">大事記</h2></div>
-        <p class="sec-desc">買房、換工作、年終這類轉折,會畫在趨勢圖上。</p></div>
-      <button class="btn btn-line" onclick="openEvent()"><i data-lucide="flag"></i>新增大事</button>
+      <div><div class="sec-title"><span class="sec-num">05</span><h2 id="h-events">${t('大事記')}</h2></div>
+        <p class="sec-desc">${t('買房、換工作、年終這類轉折,會畫在趨勢圖上。')}</p></div>
+      <button class="btn btn-line" onclick="openEvent()"><i data-lucide="flag"></i>${t('新增大事')}</button>
     </div>
     ${state.events.length ? `<ol class="tl">${[...state.events].reverse().map(e => `<li><time datetime="${e.date}">${pretty(e.date)}</time><span class="pin"></span>
-      <span class="t">${esc(e.title)}</span><span class="row-acts"><button class="icon-btn" aria-label="編輯 ${esc(e.title)}" onclick="openEvent(${e.id})"><i data-lucide="pencil"></i></button><button class="icon-btn danger" aria-label="刪除 ${esc(e.title)}" onclick="delEvent(${e.id})"><i data-lucide="trash-2"></i></button></span></li>`).join('')}</ol>`
-      : `<p class="empty-line">還沒有大事。像「買房」這種會讓曲線轉彎的事,記下來以後回頭看更清楚。</p>`}
+      <span class="t">${esc(e.title)}</span><span class="row-acts"><button class="icon-btn" aria-label="${T`編輯 ${esc(e.title)}`}" onclick="openEvent(${e.id})"><i data-lucide="pencil"></i></button><button class="icon-btn danger" aria-label="${T`刪除 ${esc(e.title)}`}" onclick="delEvent(${e.id})"><i data-lucide="trash-2"></i></button></span></li>`).join('')}</ol>`
+      : `<p class="empty-line">${t('還沒有大事。像「買房」這種會讓曲線轉彎的事,記下來以後回頭看更清楚。')}</p>`}
   </section>`;
 
   icons();
@@ -585,17 +701,17 @@ const LOAN_COLORS = ['#5c4203', '#9a6b05', '#ca8a04', '#e2b54a', '#7a8a99', '#6f
 const ym = d => d.slice(0, 7);
 const thisMonth = () => today().slice(0, 7);
 // Sum of each loan's rounded payment, the way the bank (and the old sheet) shows it.
-const monthTotal = row => row ? Object.values(row.by).reduce((t, v) => t + Math.round(v), 0) : 0;
+const monthTotal = row => row ? Object.values(row.by).reduce((s, v) => s + Math.round(v), 0) : 0;
 
 function loanSection() {
   const L = state.loans, S = state.loan_schedule;
-  if (!L.length) return `<p class="empty-line">還沒有登記貸款。新增後會算出每月月付、寬限期結束日和月付變化。</p>`;
+  if (!L.length) return `<p class="empty-line">${t('還沒有登記貸款。新增後會算出每月月付、寬限期結束日和月付變化。')}</p>`;
   const now = thisMonth(), cur = S.find(r => r.month === now), curTotal = monthTotal(cur);
   // every month where the total changes, from a year back onward
   const steps = [];
   S.forEach((r, i) => {
-    const prev = monthTotal(S[i - 1]), t = monthTotal(r);
-    if (i && t !== prev && r.month >= String(+now.slice(0, 4) - 1) + now.slice(4)) {
+    const prev = monthTotal(S[i - 1]), tot = monthTotal(r);
+    if (i && tot !== prev && r.month >= String(+now.slice(0, 4) - 1) + now.slice(4)) {
       const changed = L.filter(l => Math.round(r.by[l.id] || 0) !== Math.round(S[i - 1].by[l.id] || 0));
       // group loans that changed for the same reason: "貸款2、貸款3 寬限期結束"
       const by = {};
@@ -603,8 +719,8 @@ function loanSection() {
         const was = Math.round(S[i - 1].by[l.id] || 0), is = Math.round(r.by[l.id] || 0);
         (by[!was ? '開始繳' : !is ? '繳清' : l.grace_months && is > was ? '寬限期結束,開始還本金' : '月付變動'] ||= []).push(`<b>${esc(l.name)}</b>`);
       });
-      const why = Object.entries(by).map(([k, ns]) => `${ns.join('、')} ${k}`).join(';');
-      steps.push({ month:r.month, total:t, d:t - prev, why });
+      const why = Object.entries(by).map(([k, ns]) => `${ns.join(t('、'))} ${t(k)}`).join(t(';'));
+      steps.push({ month:r.month, total:tot, d:tot - prev, why });
     }
   });
   const upcoming = steps.filter(s => s.month > now).slice(0, 3), recent = steps.filter(s => s.month <= now).slice(-1);
@@ -612,38 +728,38 @@ function loanSection() {
   L.forEach(l => { if (l.account_id) (linked[l.account_id] ||= []).push(l); });
   const gaps = Object.entries(linked).map(([id, ls]) => {
     const a = state.accounts.find(a => a.id == id); if (!a) return '';
-    const bal = a.history.at(-1)?.value || 0, reg = ls.reduce((t, l) => t + l.balance_now, 0);
-    return bal - reg > Math.max(100000, bal * .02) ? `<div class="loan-note"><i data-lucide="info"></i><span>「${esc(a.name)}」帳上負債 ${short(bal)},已登記的貸款剩餘本金只有 ${short(reg)},還差 <b>${short(bal - reg)}</b> 沒登記。補上那筆貸款(例如新房子)月付才會完整。</span></div>` : '';
+    const bal = a.history.at(-1)?.value || 0, reg = ls.reduce((s, l) => s + l.balance_now, 0);
+    return bal - reg > Math.max(100000, bal * .02) ? `<div class="loan-note"><i data-lucide="info"></i><span>${T`「${esc(a.name)}」帳上負債 ${short(bal)},已登記的貸款剩餘本金只有 ${short(reg)},還差 <b>${short(bal - reg)}</b> 沒登記。補上那筆貸款(例如新房子)月付才會完整。`}</span></div>` : '';
   }).join('');
   const nextEnd = L.filter(l => l.grace_months && l.grace_end >= today()).sort((a, b) => a.grace_end.localeCompare(b.grace_end))[0];
   const days = d => Math.ceil((Date.parse(d) - Date.parse(today())) / 864e5);
   return `${gaps}
   <div class="loan-top">
     <div class="pay-card">
-      <div class="lbl">${now.replace('-', ' 年 ')} 月要繳</div>
-      <div class="amt">${fmt(curTotal)}<small>元</small></div>
+      <div class="lbl">${pick(`${now.replace('-', ' 年 ')} 月要繳`, `Due ${now.replace('-', '.')}`)}</div>
+      <div class="amt">${fmt(curTotal)}<small>${pick('元', ' ' + esc(BASE()))}</small></div>
       <ul class="pay-list">${L.filter(l => cur?.by[l.id]).map(l => `<li><span><span class="dot" style="background:${LOAN_COLORS[L.indexOf(l) % LOAN_COLORS.length]}"></span>${esc(l.name)}</span><b>${fmt(cur.by[l.id])}</b></li>`).join('')}</ul>
-      <div class="sub">${nextEnd ? `下一個寬限期結束:${esc(nextEnd.name)} · ${pretty(nextEnd.grace_end)}(還有 ${days(nextEnd.grace_end)} 天)` : '所有貸款都已經在還本金了'}</div>
+      <div class="sub">${nextEnd ? T`下一個寬限期結束:${esc(nextEnd.name)} · ${pretty(nextEnd.grace_end)}(還有 ${days(nextEnd.grace_end)} 天)` : t('所有貸款都已經在還本金了')}</div>
     </div>
-    <div class="next"><h3>月付變化</h3>
+    <div class="next"><h3>${t('月付變化')}</h3>
       ${[...recent, ...upcoming].map(s => `<div class="step ${s.month <= now ? 'past' : ''}"><time>${s.month.replace('-', '.')}</time>
-        <span class="why">${s.why}${s.month <= now ? ' · 已生效' : ''}</span>
-        <span class="to">${fmt(s.total)}<small style="color:${s.d > 0 ? 'var(--down)' : 'var(--up)'}">${s.d > 0 ? '+' : '−'}${fmt(Math.abs(s.d))}/月</small></span></div>`).join('') || '<p class="empty-line">之後月付都不會再變。</p>'}
+        <span class="why">${s.why}${s.month <= now ? t(' · 已生效') : ''}</span>
+        <span class="to">${fmt(s.total)}<small style="color:${s.d > 0 ? 'var(--down)' : 'var(--up)'}">${s.d > 0 ? '+' : '−'}${fmt(Math.abs(s.d))}${t('/月')}</small></span></div>`).join('') || `<p class="empty-line">${t('之後月付都不會再變。')}</p>`}
     </div>
   </div>
-  <div class="plot short"><canvas id="c-loan" role="img" aria-label="每月房貸月付金額,從第一期到繳清"></canvas></div>
-  <p class="hint"><i data-lucide="info"></i>寬限期只繳利息;之後本息平均攤還。實際金額以銀行通知為準。</p>
+  <div class="plot short"><canvas id="c-loan" role="img" aria-label="${t('每月房貸月付金額,從第一期到繳清')}"></canvas></div>
+  <p class="hint"><i data-lucide="info"></i>${t('寬限期只繳利息;之後本息平均攤還。實際金額以銀行通知為準。')}</p>
   <div class="table-scroll"><table class="ltable">
-    <thead><tr><th>貸款</th><th>本金</th><th>利率</th><th>寬限期結束</th><th>寬限期月付</th><th>攤還月付</th><th>剩餘本金</th><th><span class="sr">操作</span></th></tr></thead>
+    <thead><tr>${['貸款', '本金', '利率', '寬限期結束', '寬限期月付', '攤還月付', '剩餘本金'].map(h => `<th>${t(h)}</th>`).join('')}<th><span class="sr">${t('操作')}</span></th></tr></thead>
     <tbody>${L.map((l, i) => { const inGrace = l.grace_months && l.grace_end >= today(); return `<tr>
-      <td><span class="dot" style="background:${LOAN_COLORS[i % LOAN_COLORS.length]};margin-right:8px"></span>${esc(l.name)}<span class="tag ${inGrace ? 'grace' : ''}">${inGrace ? '寬限期中' : l.balance_now > 0 ? '還本中' : '已繳清'}</span>
-        <small>${pretty(l.start)} 起 · ${l.total_months / 12} 年</small></td>
+      <td><span class="dot" style="background:${LOAN_COLORS[i % LOAN_COLORS.length]};margin-right:8px"></span>${esc(l.name)}<span class="tag ${inGrace ? 'grace' : ''}">${t(inGrace ? '寬限期中' : l.balance_now > 0 ? '還本中' : '已繳清')}</span>
+        <small>${T`${pretty(l.start)} 起 · ${l.total_months / 12} 年`}</small></td>
       <td>${fmt(l.principal)}</td><td>${(l.rate * 100).toFixed(3).replace(/0+$/, '').replace(/\.$/, '')}%</td>
-      <td>${l.grace_months ? pretty(l.grace_end) : '—'}${inGrace ? `<small>還有 ${days(l.grace_end)} 天</small>` : ''}</td>
+      <td>${l.grace_months ? pretty(l.grace_end) : '—'}${inGrace ? `<small>${T`還有 ${days(l.grace_end)} 天`}</small>` : ''}</td>
       <td>${l.grace_months ? fmt(l.grace_payment) : '—'}</td><td>${fmt(l.level_payment)}</td>
-      <td>${fmt(l.balance_now)}<small>${pretty(l.end_date)} 繳清</small></td>
-      <td><span class="row-acts"><button class="icon-btn" onclick="openLoan(${l.id})" aria-label="編輯 ${esc(l.name)}"><i data-lucide="pencil"></i></button><button class="icon-btn danger" onclick="delLoan(${l.id})" aria-label="刪除 ${esc(l.name)}"><i data-lucide="trash-2"></i></button></span></td></tr>`; }).join('')}
-      <tr><td><b>合計</b></td><td>${fmt(L.reduce((t, l) => t + l.principal, 0))}</td><td></td><td></td><td></td><td></td><td><b>${fmt(L.reduce((t, l) => t + l.balance_now, 0))}</b></td><td></td></tr>
+      <td>${fmt(l.balance_now)}<small>${T`${pretty(l.end_date)} 繳清`}</small></td>
+      <td><span class="row-acts"><button class="icon-btn" onclick="openLoan(${l.id})" aria-label="${T`編輯 ${esc(l.name)}`}"><i data-lucide="pencil"></i></button><button class="icon-btn danger" onclick="delLoan(${l.id})" aria-label="${T`刪除 ${esc(l.name)}`}"><i data-lucide="trash-2"></i></button></span></td></tr>`; }).join('')}
+      <tr><td><b>${t('合計')}</b></td><td>${fmt(L.reduce((s, l) => s + l.principal, 0))}</td><td></td><td></td><td></td><td></td><td><b>${fmt(L.reduce((s, l) => s + l.balance_now, 0))}</b></td><td></td></tr>
     </tbody></table></div>`;
 }
 
@@ -655,14 +771,14 @@ function drawLoan() {
   o.scales.x.ticks.callback = v => new Date(v).getFullYear();
   o.scales.y.stacked = true;
   o.plugins.tooltip.callbacks.title = items => isoDate(items[0].parsed.x).slice(0, 7).replace('-', '.');
-  o.plugins.tooltip.callbacks.footer = items => '合計 ' + fmt(items.reduce((t, i) => t + Math.round(i.parsed.y), 0));
+  o.plugins.tooltip.callbacks.footer = items => t('合計') + ' ' + fmt(items.reduce((s, i) => s + Math.round(i.parsed.y), 0));
   o.plugins.tooltip.filter = i => i.parsed.y > 0;
   const today = { id:'today', afterDatasetsDraw(c) {
     const { ctx, chartArea:{ top, bottom }, scales:{ x } } = c, px = x.getPixelForValue(now);
     ctx.save(); ctx.strokeStyle = '#1f1a14'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(px, top + 18); ctx.lineTo(px, bottom); ctx.stroke();
-    ctx.font = '500 12px MiSansTC, sans-serif'; const w = ctx.measureText('今天').width + 12;
+    ctx.font = '500 12px MiSansTC, sans-serif'; const w = ctx.measureText(t('今天')).width + 12;
     ctx.fillStyle = '#1f1a14'; ctx.beginPath(); ctx.roundRect(px - w/2, top, w, 18, 9); ctx.fill();
-    ctx.fillStyle = '#f5efe3'; ctx.textBaseline = 'middle'; ctx.fillText('今天', px - w/2 + 6, top + 9.5); ctx.restore();
+    ctx.fillStyle = '#f5efe3'; ctx.textBaseline = 'middle'; ctx.fillText(t('今天'), px - w/2 + 6, top + 9.5); ctx.restore();
   } };
   charts.loan = new Chart(el, {
     type:'line', plugins:[today],
@@ -675,7 +791,7 @@ function drawLoan() {
 
 window.openLoan = id => {
   const f = $('#form-loan'), l = state.loans.find(l => l.id === id); f.reset();
-  $('#loan-acct').innerHTML = '<option value="">(不連結)</option>' + state.accounts.filter(a => a.kind === 'liability' && (!a.archived || a.id === l?.account_id))
+  $('#loan-acct').innerHTML = `<option value="">${t('(不連結)')}</option>` + state.accounts.filter(a => a.kind === 'liability' && (!a.archived || a.id === l?.account_id))
     .map(a => `<option value="${a.id}">${esc(a.name)}</option>`).join('');
   f.id.value = l ? l.id : '';
   f.start.value = l ? l.start : today();
@@ -683,8 +799,8 @@ window.openLoan = id => {
     f.name.value = l.name; f.account_id.value = l.account_id || ''; f.principal.value = l.principal.toLocaleString('en-US');
     f.rate.value = +(l.rate * 100).toFixed(4); f.grace_months.value = l.grace_months; f.total_months.value = l.total_months;
   }
-  $('#loan-title').textContent = l ? '編輯貸款' : '新增貸款';
-  f.querySelector('.acts .btn-ink').textContent = l ? '儲存' : '新增';
+  $('#loan-title').textContent = t(l ? '編輯貸款' : '新增貸款');
+  f.querySelector('.acts .btn-ink').textContent = t(l ? '儲存' : '新增');
   loanPreview(); $('#dlg-loan').showModal();
 };
 // Preview the monthly payment while typing, same formula as the server.
@@ -692,21 +808,21 @@ function loanPreview() {
   const f = $('#form-loan'), P = num(f.principal.value), r = +f.rate.value / 1200, g = +f.grace_months.value, n = +f.total_months.value - g;
   if (!(P > 0) || !(n > 0) || isNaN(r)) return $('#loan-preview').textContent = '';
   const level = r ? P * r / (1 - Math.pow(1 + r, -n)) : P / n;
-  $('#loan-preview').innerHTML = g ? `寬限期月付 <b>${fmt(P * r)}</b> → 之後 <b>${fmt(level)}</b>` : `月付 <b>${fmt(level)}</b>`;
+  $('#loan-preview').innerHTML = g ? T`寬限期月付 <b>${fmt(P * r)}</b> → 之後 <b>${fmt(level)}</b>` : T`月付 <b>${fmt(level)}</b>`;
 }
 $('#form-loan').addEventListener('input', loanPreview);
 $('#form-loan').principal.addEventListener('focusout', e => { const v = num(e.target.value); if (e.target.value && !isNaN(v)) e.target.value = v.toLocaleString('en-US'); });
 bindForm('#form-loan', async fd => {
   const o = Object.fromEntries(fd), principal = num(o.principal);
-  if (!(principal > 0)) throw new Error('本金要是大於 0 的數字');
+  if (!(principal > 0)) throw new Error(t('本金要是大於 0 的數字'));
   await api(o.id ? 'PUT' : 'POST', o.id ? `/api/loans/${o.id}` : '/api/loans', { name:o.name.trim(), account_id:o.account_id ? +o.account_id : null, principal,
     rate:+o.rate / 100, start:o.start, grace_months:+o.grace_months, total_months:+o.total_months });
-  return `<i data-lucide="check"></i>${o.id ? '已更新' : '已新增'}貸款「${esc(o.name)}」`;
+  return `<i data-lucide="check"></i>${o.id ? T`已更新貸款「${esc(o.name)}」` : T`已新增貸款「${esc(o.name)}」`}`;
 });
 window.delLoan = async id => {
   const l = state.loans.find(l => l.id === id);
-  if (!await ask(`刪除貸款「${esc(l.name)}」?`, '只會刪掉這筆貸款的設定(月付計算),帳上的負債餘額不受影響。', '刪除')) return;
-  act(() => api('DELETE', `/api/loans/${id}`), `<i data-lucide="trash-2"></i>已刪除「${esc(l.name)}」`);
+  if (!await ask(T`刪除貸款「${esc(l.name)}」?`, t('只會刪掉這筆貸款的設定(月付計算),帳上的負債餘額不受影響。'), t('刪除'))) return;
+  act(() => api('DELETE', `/api/loans/${id}`), `<i data-lucide="trash-2"></i>${T`已刪除「${esc(l.name)}」`}`);
 };
 
 function delta(d, label) {
@@ -721,18 +837,18 @@ function balanceBar(last, assets, debt) {
   const ks = ASSET_KINDS.filter(k => last.by_kind[k] > 0);
   const seg = (w, style, title, inner = '', cls = '') =>
     `<span class="bb-seg ${cls}" style="flex:0 0 calc(${(w/scale*100).toFixed(3)}% - 2px);${style}" title="${title}">${inner}</span>`;
-  return `<div class="balance" role="group" aria-label="資產負債平衡">
-    <h2>你真正擁有的</h2>
-    <p>上排是資產,下排是負債;金色那段就是淨資產。</p>
-    <div class="bb-row"><span class="bb-k">資產</span><div class="bb-bar">${ks.map((k, i) =>
+  return `<div class="balance" role="group" aria-label="${t('資產負債平衡')}">
+    <h2>${t('你真正擁有的')}</h2>
+    <p>${t('上排是資產,下排是負債;金色那段就是淨資產。')}</p>
+    <div class="bb-row"><span class="bb-k">${t('資產')}</span><div class="bb-bar">${ks.map((k, i) =>
       seg(last.by_kind[k], `background:${KINDS[k].color};animation-delay:${i*.06}s`, `${KINDS[k].label} ${fmt(last.by_kind[k])}`)).join('')}</div></div>
     <div class="bb-legend">${ks.map(k => `<span>${dot(k)} ${KINDS[k].label} ${Math.round(last.by_kind[k]/assets*100)}%</span>`).join('')}</div>
-    <div class="bb-row"><span class="bb-k">負債</span><div class="bb-bar">${
-      debt > 0 ? seg(debt, `background:${KINDS.liability.color};opacity:.85`, `負債 ${fmt(debt)}`) : ''}${
-      net > 0 ? seg(net, 'animation-delay:.35s', `淨資產 ${fmt(net)}`, '', 'net') : ''}</div></div>
-    <div class="bb-legend">${debt > 0 ? `<span>${dot('liability')} 負債 ${short(debt)}</span>` : ''}${net > 0
-      ? `<span class="bb-net"><span class="dot"></span> 淨資產 ${short(net)}</span>` : `<span style="color:var(--down)">資不抵債 ${short(-net)}</span>`}</div>
-    <div class="bb-foot"><span>總資產 <b>${short(assets)}</b></span><span>負債 <b>${short(debt)}</b></span><span>負債比 <b>${assets ? Math.round(debt/assets*100) : 0}%</b></span></div>
+    <div class="bb-row"><span class="bb-k">${t('負債')}</span><div class="bb-bar">${
+      debt > 0 ? seg(debt, `background:${KINDS.liability.color};opacity:.85`, `${t('負債')} ${fmt(debt)}`) : ''}${
+      net > 0 ? seg(net, 'animation-delay:.35s', `${t('淨資產')} ${fmt(net)}`, '', 'net') : ''}</div></div>
+    <div class="bb-legend">${debt > 0 ? `<span>${dot('liability')} ${t('負債')} ${short(debt)}</span>` : ''}${net > 0
+      ? `<span class="bb-net"><span class="dot"></span> ${t('淨資產')} ${short(net)}</span>` : `<span style="color:var(--down)">${t('資不抵債')} ${short(-net)}</span>`}</div>
+    <div class="bb-foot"><span>${t('總資產')} <b>${short(assets)}</b></span><span>${t('負債')} <b>${short(debt)}</b></span><span>${t('負債比')} <b>${assets ? Math.round(debt/assets*100) : 0}%</b></span></div>
   </div>`;
 }
 
@@ -741,22 +857,22 @@ function sheet(last, assets, debt) {
   const group = k => {
     const list = live.filter(a => a.kind === k);
     if (!list.length) return '';
-    const sum = list.reduce((t,a) => t + (a.history.at(-1)?.value || 0), 0);
+    const sum = list.reduce((s, a) => s + (a.history.at(-1)?.value || 0), 0);
     const base = k === 'liability' ? debt : assets;
     return `<div class="grp"><div class="grp-h">${dot(k)}<span>${KINDS[k].label}</span>
       <span class="share"><i style="width:${base ? Math.min(100, sum/base*100) : 0}%;background:${KINDS[k].color}"></i></span>
       <span class="amt">${fmt(sum)}</span></div>${list.map(acctRow).join('')}</div>`;
   };
   return `<div class="sheet">
-    <div class="side"><div class="side-h">資產 <span>${live.filter(a => a.kind !== 'liability').length} 個帳戶</span></div>
+    <div class="side"><div class="side-h">${t('資產')} <span>${T`${live.filter(a => a.kind !== 'liability').length} 個帳戶`}</span></div>
       ${ASSET_KINDS.map(group).join('')}
-      <div class="total"><span>資產合計</span><b>${fmt(assets)}</b></div></div>
-    <div class="side"><div class="side-h">負債與淨資產 <span>${live.filter(a => a.kind === 'liability').length} 筆負債</span></div>
-      ${group('liability') || '<p class="empty-line" style="margin-top:12px">沒有負債。</p>'}
-      <div class="networth-line"><span>淨資產</span><b>${fmt(assets - debt)}</b></div>
-      <div class="total"><span>負債 + 淨資產</span><b>${fmt(assets)}</b></div></div>
+      <div class="total"><span>${t('資產合計')}</span><b>${fmt(assets)}</b></div></div>
+    <div class="side"><div class="side-h">${t('負債與淨資產')} <span>${T`${live.filter(a => a.kind === 'liability').length} 筆負債`}</span></div>
+      ${group('liability') || `<p class="empty-line" style="margin-top:12px">${t('沒有負債。')}</p>`}
+      <div class="networth-line"><span>${t('淨資產')}</span><b>${fmt(assets - debt)}</b></div>
+      <div class="total"><span>${t('負債 + 淨資產')}</span><b>${fmt(assets)}</b></div></div>
   </div>
-  ${archived.length ? `<details class="archived"><summary><i data-lucide="chevron-right" class="chev"></i><i data-lucide="archive"></i>已封存 ${archived.length} 個帳戶</summary>
+  ${archived.length ? `<details class="archived"><summary><i data-lucide="chevron-right" class="chev"></i><i data-lucide="archive"></i>${T`已封存 ${archived.length} 個帳戶`}</summary>
     ${archived.map(acctRow).join('')}</details>` : ''}`;
 }
 
@@ -767,10 +883,10 @@ function acctRow(a) {
   const good = d == null ? '' : (a.kind === 'liability' ? -d : d) >= 0 ? 'up' : 'down';
   return `<div class="acct">
     <div style="min-width:0"><div class="acct-name">${esc(a.name)}</div>
-      <div class="acct-sub">${a.currency !== BASE() ? `${a.currency} ${a.amount.toLocaleString()} × ${a.fx} · ` : ''}${pretty(h.at(-1)?.date) || '尚未記錄'}</div></div>
+      <div class="acct-sub">${a.currency !== BASE() ? `${a.currency} ${a.amount.toLocaleString()} × ${a.fx} · ` : ''}${pretty(h.at(-1)?.date) || t('尚未記錄')}</div></div>
     <canvas id="sp-${a.id}" width="144" height="52" aria-hidden="true"></canvas>
     <div class="acct-v">${fmt(cur)}${d ? `<small class="${good}">${signed(d)}</small>` : ''}</div>
-    <button class="icon-btn" onclick="openAccount(${a.id})" aria-label="編輯 ${esc(a.name)}" title="編輯、看歷史紀錄"><i data-lucide="pencil"></i></button>
+    <button class="icon-btn" onclick="openAccount(${a.id})" aria-label="${T`編輯 ${esc(a.name)}`}" title="${t('編輯、看歷史紀錄')}"><i data-lucide="pencil"></i></button>
   </div>`;
 }
 
@@ -813,9 +929,9 @@ const markers = {
     const { ctx, chartArea:{ top, bottom, left, right }, scales:{ x } } = chart;
     ctx.save();
     for (const e of state.events) {
-      const t = Date.parse(e.date);
-      if (t < x.min || t > x.max) continue;
-      const px = x.getPixelForValue(t);
+      const at = Date.parse(e.date);
+      if (at < x.min || at > x.max) continue;
+      const px = x.getPixelForValue(at);
       ctx.strokeStyle = '#9a8f7c'; ctx.lineWidth = 1; ctx.setLineDash([4,4]);
       ctx.beginPath(); ctx.moveTo(px, top + 18); ctx.lineTo(px, bottom); ctx.stroke();
       ctx.setLineDash([]); ctx.font = '500 12px MiSansTC, sans-serif';
@@ -848,10 +964,12 @@ const needChart = () => chartLib ||= new Promise((ok, fail) => {
     Chart.defaults.color = '#6f6556';
     ok();
   };
-  s.onerror = () => { chartLib = null; fail(new Error('圖表元件載入失敗,檢查網路後重新整理')); };
+  s.onerror = () => { chartLib = null; fail(new Error(t('圖表元件載入失敗,檢查網路後重新整理'))); };
   document.head.appendChild(s);
 });
-const tick = v => Math.abs(v) >= 1e8 ? +(v/1e8).toFixed(2) + ' 億' : Math.abs(v) >= 1e4 ? Math.round(v/1e4).toLocaleString('zh-TW') + ' 萬' : fmt(v);
+const tick = v => LANG === 'en'
+  ? Math.abs(v) >= 1e9 ? +(v/1e9).toFixed(2) + 'B' : Math.abs(v) >= 1e6 ? +(v/1e6).toFixed(2) + 'M' : Math.abs(v) >= 1e3 ? Math.round(v/1e3) + 'K' : fmt(v)
+  : Math.abs(v) >= 1e8 ? +(v/1e8).toFixed(2) + ' 億' : Math.abs(v) >= 1e4 ? Math.round(v/1e4).toLocaleString('zh-TW') + ' 萬' : fmt(v);
 const isoDate = ms => new Date(ms).toISOString().slice(0,10);
 const pts = (rows, f) => rows.map(r => ({ x:Date.parse(r.date), y:f(r) }));
 const baseOpts = rows => ({
@@ -888,7 +1006,7 @@ function drawNet(rows) {
   };
   charts.net = new Chart(ctx, {
     type:'line', plugins:[markers],
-    data:{ datasets:[{ label:'淨資產', data:pts(rows, r => r.total),
+    data:{ datasets:[{ label:t('淨資產'), data:pts(rows, r => r.total),
       borderColor:'#b07a06', backgroundColor:g, fill:true, borderWidth:2.25, cubicInterpolationMode:'monotone',
       // only the latest point gets a dot: "you are here"
       pointRadius:rows.map((_, i) => i === rows.length - 1 ? 5 : 0), pointHoverRadius:5,
@@ -901,7 +1019,7 @@ function drawStack(rows) {
   const opts = baseOpts(rows);
   opts.scales.y.stacked = true;
   if (!REDUCED) opts.animation = { duration:700, easing:'easeInOutCubic' }; // y-axis rescale animates when filtering
-  opts.plugins.tooltip.callbacks.footer = items => '合計 ' + fmt(items.reduce((t,i) => t + i.parsed.y, 0));
+  opts.plugins.tooltip.callbacks.footer = items => t('合計') + ' ' + fmt(items.reduce((s, i) => s + i.parsed.y, 0));
   charts.stack = new Chart($('#c-stack'), {
     type:'line', plugins:[markers],
     data:{ datasets:ASSET_KINDS.filter(k => rows.some(r => r.by_kind[k])).map(k => ({
@@ -916,7 +1034,7 @@ function drawStack(rows) {
 function renderStackChips() {
   if (!charts.stack) return;
   const ds = charts.stack.data.datasets;
-  $('#stack-chips').innerHTML = `<button class="chip" aria-pressed="${!stackSel.size}" onclick="toggleStack()">全部</button>` +
+  $('#stack-chips').innerHTML = `<button class="chip" aria-pressed="${!stackSel.size}" onclick="toggleStack()">${t('全部')}</button>` +
     ds.map(d => `<button class="chip" aria-pressed="${stackSel.has(d.kind)}" onclick="toggleStack('${d.kind}')">${dot(d.kind)}${d.label}</button>`).join('');
   ds.forEach((d, i) => charts.stack.setDatasetVisibility(i, !stackSel.size || stackSel.has(d.kind)));
   charts.stack.update();
@@ -972,17 +1090,17 @@ async function act(fn, done) {
 }
 window.archive = async (id, archived) => {
   const a = state.accounts.find(a => a.id === id);
-  if (archived && !await ask(`封存「${a.name}」?`,
-    '封存後會收進資產負債表下方的「已封存」,歷史紀錄仍保留在趨勢圖裡。' +
-    (a.amount ? `<br><b style="color:var(--down)">目前餘額還有 ${fmt(a.amount)} ${a.currency},封存後仍會算進淨資產。帳戶已結清的話,先記一筆 0 再封存。</b>` : ''),
-    '封存')) return;
+  if (archived && !await ask(T`封存「${a.name}」?`,
+    t('封存後會收進資產負債表下方的「已封存」,歷史紀錄仍保留在趨勢圖裡。') +
+    (a.amount ? T`<br><b style="color:var(--down)">目前餘額還有 ${fmt(a.amount)} ${a.currency},封存後仍會算進淨資產。帳戶已結清的話,先記一筆 0 再封存。</b>` : ''),
+    t('封存'))) return;
   $('#dlg-account').close();
-  act(() => api('PATCH', `/api/accounts/${id}`, { archived }), `<i data-lucide="archive"></i>已${archived ? '' : '取消'}封存「${esc(a.name)}」`);
+  act(() => api('PATCH', `/api/accounts/${id}`, { archived }), `<i data-lucide="archive"></i>${archived ? T`已封存「${esc(a.name)}」` : T`已取消封存「${esc(a.name)}」`}`);
 };
 window.delEvent = async id => {
   const e = state.events.find(e => e.id === id);
-  if (!await ask('刪除這件大事?', `${pretty(e.date)}  ${esc(e.title)}`, '刪除')) return;
-  act(() => api('DELETE', `/api/events/${id}`), `<i data-lucide="trash-2"></i>已刪除「${esc(e.title)}」`);
+  if (!await ask(t('刪除這件大事?'), `${pretty(e.date)}  ${esc(e.title)}`, t('刪除'))) return;
+  act(() => api('DELETE', `/api/events/${id}`), `<i data-lucide="trash-2"></i>${T`已刪除「${esc(e.title)}」`}`);
 };
 
 // Dialogs
@@ -1006,33 +1124,33 @@ window.openAccount = id => {
   f.reset(); f.id.value = a ? a.id : '';
   f.currency.value = a ? a.currency : BASE();
   f.currency.readOnly = !!(a && a.history.length); // fx history is per currency
-  f.currency.title = f.currency.readOnly ? '已經有餘額紀錄,幣別不能改' : '';
+  f.currency.title = f.currency.readOnly ? t('已經有餘額紀錄,幣別不能改') : '';
   if (a) { f.name.value = a.name; f.kind.value = a.kind; }
-  $('#acc-title').textContent = a ? '編輯帳戶' : '新增帳戶';
-  $('#acc-desc').textContent = a ? '改名稱、類別,或修正過去記錯的餘額。' : '建立後到「記一筆」填第一筆餘額。';
-  $('#acc-submit').textContent = a ? '儲存' : '新增';
+  $('#acc-title').textContent = t(a ? '編輯帳戶' : '新增帳戶');
+  $('#acc-desc').textContent = t(a ? '改名稱、類別,或修正過去記錯的餘額。' : '建立後到「記一筆」填第一筆餘額。');
+  $('#acc-submit').textContent = t(a ? '儲存' : '新增');
   $('#acc-history').innerHTML = a ? historyEditor(a) : '';
   icons(); $('#dlg-account').showModal();
 };
 function historyEditor(a) {
   const foreign = a.currency !== BASE();
-  return `<div class="hist"><h3>歷史紀錄 <small>${a.history.length} 筆 · 改完按儲存</small></h3>
+  return `<div class="hist"><h3>${T`歷史紀錄 <small>${a.history.length} 筆 · 改完按儲存</small>`}</h3>
     ${[...a.history].reverse().map(h => `<div class="hrow" data-date="${h.date}">
       <time datetime="${h.date}">${pretty(h.date)}</time>
-      <input name="h-amt" inputmode="decimal" aria-label="${h.date} 餘額" value="${h.amount.toLocaleString('en-US')}" data-orig="${h.amount}">
-      <input class="fxi" name="h-fx" type="number" step="any" min="0" aria-label="${h.date} 匯率" value="${+h.fx.toFixed(4)}" data-orig="${h.fx}" ${foreign ? '' : 'hidden'}>
-      <button type="button" class="icon-btn danger" aria-label="刪除 ${h.date} 這筆" onclick="delSnapshot(${a.id}, '${h.date}')"><i data-lucide="trash-2"></i></button>
-    </div>`).join('') || '<p class="empty-line">還沒有紀錄。</p>'}
+      <input name="h-amt" inputmode="decimal" aria-label="${T`${h.date} 餘額`}" value="${h.amount.toLocaleString('en-US')}" data-orig="${h.amount}">
+      <input class="fxi" name="h-fx" type="number" step="any" min="0" aria-label="${T`${h.date} 匯率`}" value="${+h.fx.toFixed(4)}" data-orig="${h.fx}" ${foreign ? '' : 'hidden'}>
+      <button type="button" class="icon-btn danger" aria-label="${T`刪除 ${h.date} 這筆`}" onclick="delSnapshot(${a.id}, '${h.date}')"><i data-lucide="trash-2"></i></button>
+    </div>`).join('') || `<p class="empty-line">${t('還沒有紀錄。')}</p>`}
     <div class="danger-zone">
-      <button type="button" class="btn btn-line" onclick="archive(${a.id}, ${!a.archived})"><i data-lucide="${a.archived ? 'archive-restore' : 'archive'}"></i>${a.archived ? '取消封存' : '封存'}</button>
-      <button type="button" class="btn btn-danger" onclick="delAccount(${a.id})"><i data-lucide="trash-2"></i>刪除帳戶</button>
+      <button type="button" class="btn btn-line" onclick="archive(${a.id}, ${!a.archived})"><i data-lucide="${a.archived ? 'archive-restore' : 'archive'}"></i>${t(a.archived ? '取消封存' : '封存')}</button>
+      <button type="button" class="btn btn-danger" onclick="delAccount(${a.id})"><i data-lucide="trash-2"></i>${t('刪除帳戶')}</button>
     </div></div>`;
 }
 bindForm('#form-account', async fd => {
   const o = Object.fromEntries(fd), id = +o.id;
   if (!id) {
     const a = await api('POST', '/api/accounts', { name:o.name, kind:o.kind, currency:o.currency.toUpperCase() });
-    return `<i data-lucide="check"></i>已新增「${esc(a.name)}」,到「記一筆」填餘額`;
+    return `<i data-lucide="check"></i>${T`已新增「${esc(a.name)}」,到「記一筆」填餘額`}`;
   }
   const a = state.accounts.find(a => a.id === id), patch = { name:o.name, kind:o.kind };
   if (!a.history.length) patch.currency = o.currency.toUpperCase();
@@ -1040,22 +1158,22 @@ bindForm('#form-account', async fd => {
   // corrected history rows
   const changed = [...document.querySelectorAll('#acc-history .hrow')].map(r => {
     const amt = r.querySelector('[name=h-amt]'), fx = r.querySelector('[name=h-fx]');
-    if (isNaN(num(amt.value)) || amt.value === '') throw new Error(`${r.dataset.date} 的餘額不是數字`);
+    if (isNaN(num(amt.value)) || amt.value === '') throw new Error(T`${r.dataset.date} 的餘額不是數字`);
     return num(amt.value) !== +amt.dataset.orig || +fx.value !== +fx.dataset.orig ? { account_id:id, date:r.dataset.date, amount:num(amt.value), fx:+fx.value || 1 } : null;
   }).filter(Boolean);
   if (changed.length) await api('POST', '/api/snapshots', changed);
-  return `<i data-lucide="check"></i>已更新「${esc(o.name)}」${changed.length ? `,修正 ${changed.length} 筆紀錄` : ''}`;
+  return `<i data-lucide="check"></i>${T`已更新「${esc(o.name)}」`}${changed.length ? T`,修正 ${changed.length} 筆紀錄` : ''}`;
 });
 window.delSnapshot = async (id, date) => {
-  if (!await ask(`刪除 ${pretty(date)} 這筆紀錄?`, '趨勢圖會改用前一筆餘額接續。', '刪除')) return;
-  await act(() => api('DELETE', `/api/snapshots?account_id=${id}&date=${date}`), `<i data-lucide="trash-2"></i>已刪除 ${pretty(date)} 的紀錄`);
+  if (!await ask(T`刪除 ${pretty(date)} 這筆紀錄?`, t('趨勢圖會改用前一筆餘額接續。'), t('刪除'))) return;
+  await act(() => api('DELETE', `/api/snapshots?account_id=${id}&date=${date}`), `<i data-lucide="trash-2"></i>${T`已刪除 ${pretty(date)} 的紀錄`}`);
   if ($('#dlg-account').open) openAccount(id);
 };
 window.delAccount = async id => {
   const a = state.accounts.find(a => a.id === id);
-  if (!await ask(`刪除「${a.name}」?`, `會一起刪掉它的 <b>${a.history.length} 筆</b>餘額紀錄,淨資產和趨勢都會重算,無法復原。<br>只是不想再看到的話,用「封存」就好。`, '永久刪除')) return;
+  if (!await ask(T`刪除「${a.name}」?`, T`會一起刪掉它的 <b>${a.history.length} 筆</b>餘額紀錄,淨資產和趨勢都會重算,無法復原。<br>只是不想再看到的話,用「封存」就好。`, t('永久刪除'))) return;
   $('#dlg-account').close();
-  act(() => api('DELETE', `/api/accounts/${id}`), `<i data-lucide="trash-2"></i>已刪除「${esc(a.name)}」`);
+  act(() => api('DELETE', `/api/accounts/${id}`), `<i data-lucide="trash-2"></i>${T`已刪除「${esc(a.name)}」`}`);
 };
 
 // Settings: name, subtitle, base currency (locked once balances exist, since every fx is relative to it).
@@ -1064,24 +1182,24 @@ window.openSettings = () => {
   const f = $('#form-settings'), locked = state.accounts.some(a => a.history.length);
   f.title.value = state.settings.title; f.subtitle.value = state.settings.subtitle; f.base_currency.value = BASE();
   f.base_currency.readOnly = locked;
-  $('#base-note').textContent = locked ? '已經有餘額紀錄,基準幣別不能再改。' : '所有金額都換算成這個幣別。開始記帳後就不能改。';
+  $('#base-note').textContent = t(locked ? '已經有餘額紀錄,基準幣別不能再改。' : '所有金額都換算成這個幣別。開始記帳後就不能改。');
   $('#dlg-settings').showModal();
 };
 bindForm('#form-settings', async fd => {
   const o = Object.fromEntries(fd); o.base_currency = o.base_currency.toUpperCase();
   await api('PUT', '/api/settings', o);
-  return `<i data-lucide="check"></i>已儲存設定`;
+  return `<i data-lucide="check"></i>${t('已儲存設定')}`;
 });
 window.openEvent = id => {
   const f = $('#form-event'), e = state.events.find(e => e.id === id);
   f.reset(); f.id.value = e ? e.id : ''; f.date.value = e ? e.date : today(); if (e) f.title.value = e.title;
-  $('#ev-title').textContent = e ? '編輯大事' : '新增大事';
+  $('#ev-title').textContent = t(e ? '編輯大事' : '新增大事');
   $('#dlg-event').showModal();
 };
 bindForm('#form-event', async fd => {
   const o = Object.fromEntries(fd);
   await api(o.id ? 'PUT' : 'POST', o.id ? `/api/events/${o.id}` : '/api/events', { date:o.date, title:o.title });
-  return `<i data-lucide="flag"></i>${o.id ? '已更新' : '已加到大事記'}`;
+  return `<i data-lucide="flag"></i>${t(o.id ? '已更新' : '已加到大事記')}`;
 });
 
 $('#btn-balance').onclick = () => {
@@ -1092,9 +1210,9 @@ $('#btn-balance').onclick = () => {
   $('#bal-rows').innerHTML = Object.keys(KINDS).map(k => {
     const list = active.filter(a => a.kind === k);
     return list.length ? `<div class="bal-grp">${dot(k)}${KINDS[k].label}</div>` + list.map(a => `<div class="bal-row" data-id="${a.id}">
-      <div class="bal-name">${esc(a.name)} <small data-hint>${a.history.length ? `上次 ${fmt(a.amount)} ${a.currency}` : '尚未記錄'}</small></div>
-      <input type="text" inputmode="decimal" autocomplete="off" name="amt" aria-label="${esc(a.name)} 餘額(${a.currency})" value="${a.history.length ? a.amount.toLocaleString('en-US') : ''}" placeholder="${a.currency} 餘額">
-      ${a.currency === BASE() ? '' : `<label class="fx"><span>${a.currency}/${BASE()}</span><input type="number" step="any" min="0" name="fx" aria-label="${esc(a.name)} 匯率 ${a.currency}/${BASE()}" value="${+a.fx.toFixed(4)}" required></label>`}
+      <div class="bal-name">${esc(a.name)} <small data-hint>${a.history.length ? T`上次 ${fmt(a.amount)} ${a.currency}` : t('尚未記錄')}</small></div>
+      <input type="text" inputmode="decimal" autocomplete="off" name="amt" aria-label="${T`${esc(a.name)} 餘額(${a.currency})`}" value="${a.history.length ? a.amount.toLocaleString('en-US') : ''}" placeholder="${T`${a.currency} 餘額`}">
+      ${a.currency === BASE() ? '' : `<label class="fx"><span>${a.currency}/${BASE()}</span><input type="number" step="any" min="0" name="fx" aria-label="${T`${esc(a.name)} 匯率 ${a.currency}/${BASE()}`}" value="${+a.fx.toFixed(4)}" required></label>`}
     </div>`).join('') : '';
   }).join('');
   $('#form-balance .err').textContent = '';
@@ -1113,14 +1231,14 @@ function balanceChanges() {
   });
 }
 function preview() {
-  const ch = balanceChanges(), total = ch.reduce((t, c) => t + c.d, 0), base = state.series.at(-1)?.total || 0;
+  const ch = balanceChanges(), total = ch.reduce((s, c) => s + c.d, 0), base = state.series.at(-1)?.total || 0;
   ch.forEach(({ a, r, d }) => {
     const s = r.querySelector('[data-hint]');
     if (!a.history.length) return;
     s.className = Math.abs(d) >= 1 ? (d > 0 ? 'up' : 'down') : '';
-    s.textContent = Math.abs(d) >= 1 ? `${signed(d)} 對淨資產` : `上次 ${fmt(a.amount)} ${a.currency}`;
+    s.textContent = Math.abs(d) >= 1 ? T`${signed(d)} 對淨資產` : T`上次 ${fmt(a.amount)} ${a.currency}`;
   });
-  $('#bal-preview').innerHTML = `淨資產將是 <b>${fmt(base + total)}</b> ${Math.abs(total) >= 1 ? `<span class="delta ${total > 0 ? 'up' : 'down'}"><b>${signed(total)}</b></span>` : ''}`;
+  $('#bal-preview').innerHTML = `${T`淨資產將是 <b>${fmt(base + total)}</b>`} ${Math.abs(total) >= 1 ? `<span class="delta ${total > 0 ? 'up' : 'down'}"><b>${signed(total)}</b></span>` : ''}`;
 }
 $('#bal-rows').addEventListener('input', preview);
 // reformat with thousands separators when leaving a field
@@ -1137,7 +1255,7 @@ async function fillFX() {
     try {
       const { rate } = await api('GET', `/api/fx?cur=${cur}&date=${date}`);
       if ($('#form-balance').date.value !== date) return; // date changed meanwhile
-      rows.filter(r => curOf(r) === cur).forEach(r => { const i = r.querySelector('[name=fx]'); i.value = +rate.toFixed(4); i.title = `${date} ${cur}/${BASE()},自動帶入`; });
+      rows.filter(r => curOf(r) === cur).forEach(r => { const i = r.querySelector('[name=fx]'); i.value = +rate.toFixed(4); i.title = T`${date} ${cur}/${BASE()},自動帶入`; });
       preview();
     } catch (e) { console.warn('fx', cur, e.message); }
   }
@@ -1146,16 +1264,16 @@ $('#form-balance').date.addEventListener('change', fillFX);
 bindForm('#form-balance', async fd => {
   const date = fd.get('date'), ch = balanceChanges();
   const nan = ch.find(c => c.amt !== '' && isNaN(num(c.amt)));
-  if (nan) { nan.r.querySelector('[name=amt]').focus(); throw new Error(`「${nan.a.name}」的餘額不是數字`); }
+  if (nan) { nan.r.querySelector('[name=amt]').focus(); throw new Error(T`「${nan.a.name}」的餘額不是數字`); }
   const bad = ch.find(c => c.amt !== '' && c.a.currency !== BASE() && !(c.fx > 0));
-  if (bad) throw new Error(`「${bad.a.name}」的匯率要大於 0`);
+  if (bad) throw new Error(T`「${bad.a.name}」的匯率要大於 0`);
   // only rows with a value are saved; untouched accounts carry forward in the trend
   const snaps = ch.filter(c => c.amt !== '').map(c => ({ account_id:c.a.id, date, amount:num(c.amt), fx:c.fx || 1 }));
-  if (!snaps.length) throw new Error('至少填一個帳戶的餘額');
+  if (!snaps.length) throw new Error(t('至少填一個帳戶的餘額'));
   const before = state.series.at(-1)?.total || 0;
   await api('POST', '/api/snapshots', snaps);
   const after = (await api('GET', '/api/state')).series.at(-1)?.total || 0;
-  return `<i data-lucide="check"></i>已記錄 ${pretty(date)} · 淨資產 ${signed(after - before)}`;
+  return `<i data-lucide="check"></i>${T`已記錄 ${pretty(date)} · 淨資產 ${signed(after - before)}`}`;
 });
 
 icons();
