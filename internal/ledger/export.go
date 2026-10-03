@@ -8,22 +8,72 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 )
 
-var kindLabel = map[string]string{"bank": "銀行", "tw_stock": "台股", "us_stock": "美股", "movable": "動產",
-	"real_estate": "不動產", "crypto": "加密貨幣", "liability": "負債"}
+// escapeCell stops a spreadsheet from running a cell as a formula (CSV injection): a leading = + - @
+// gets a ' in front, which Excel shows as plain text. unescapeCell undoes it on import. A leading '
+// is escaped too, so a name that really starts with ' survives the round trip.
+const escapedLead = "=+-@\t\r'"
+
+func escapeCell(s string) string {
+	if s != "" && strings.ContainsRune(escapedLead, rune(s[0])) {
+		return "'" + s
+	}
+	return s
+}
+
+func unescapeCell(s string) string {
+	if len(s) > 1 && s[0] == '\'' && strings.ContainsRune(escapedLead, rune(s[1])) {
+		return s[1:]
+	}
+	return s
+}
+
+// exportLabels are the wide layout's fixed cells; ?lang=en switches them.
+var exportLabels = map[bool]map[string]string{
+	false: {"account": "帳戶", "kind": "類別", "currency": "幣別", "archived": "封存", "yes": "是", "fx": "匯率 %s(對 %s)", "subtotal": "小計 %s(%s)", "net": "淨資產(%s)"},
+	true:  {"account": "Account", "kind": "Class", "currency": "Currency", "archived": "Archived", "yes": "yes", "fx": "Rate %s (to %s)", "subtotal": "Subtotal %s (%s)", "net": "Net worth (%s)"},
+}
+
+// exportLong writes date,account,amount,fx: the layout POST /api/import reads, so an export re-imports as is.
+func exportLong(ctx context.Context, db *sql.DB) ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteString("\xef\xbb\xbf")
+	w := csv.NewWriter(&buf)
+	w.Write([]string{"date", "account", "amount", "fx"})
+	err := queryEach(ctx, db, `SELECT s.date, a.name, s.amount, s.fx FROM snapshots s JOIN accounts a ON a.id = s.account_id ORDER BY s.date, a.sort, a.id`, func(r *sql.Rows) error {
+		var date, name string
+		var amount, fx float64
+		if err := r.Scan(&date, &name, &amount, &fx); err != nil {
+			return err
+		}
+		return w.Write([]string{date, escapeCell(name), strconv.FormatFloat(amount, 'f', -1, 64), strconv.FormatFloat(fx, 'f', -1, 64)})
+	})
+	if err != nil {
+		return nil, fmt.Errorf("export long: %w", err)
+	}
+	w.Flush()
+	return buf.Bytes(), w.Error()
+}
 
 // exportCSV writes a spreadsheet-friendly layout: one row per account,
 // one column per snapshot date, balances in the account's own currency, plus totals in the base currency.
 // A UTF-8 BOM makes Excel read the Chinese correctly.
-func exportCSV(ctx context.Context, db *sql.DB) ([]byte, error) {
+func exportCSV(ctx context.Context, db *sql.DB, en bool) ([]byte, error) {
+	L := exportLabels[en]
+	kinds, err := listKinds(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+	byKey := kindMap(kinds)
 	type acct struct {
 		id              int64
 		name, kind, cur string
 		archived        bool
 	}
 	var accts []acct
-	rows, err := db.QueryContext(ctx, `SELECT id, name, kind, currency, archived FROM accounts ORDER BY id`)
+	rows, err := db.QueryContext(ctx, `SELECT id, name, kind, currency, archived FROM accounts ORDER BY sort, id`)
 	if err != nil {
 		return nil, fmt.Errorf("export accounts: %w", err)
 	}
@@ -46,8 +96,12 @@ func exportCSV(ctx context.Context, db *sql.DB) ([]byte, error) {
 		vals[a.id], kindOf[a.id] = map[string]float64{}, a.kind
 	}
 	var snaps []Snapshot
-	fxByDate := map[string]float64{}
-	rows, err = db.QueryContext(ctx, `SELECT account_id, date, amount, fx FROM snapshots`)
+	curOf := map[int64]string{}
+	for _, a := range accts {
+		curOf[a.id] = a.cur
+	}
+	fx := map[string]map[string]float64{} // currency → date → rate (last account by id wins on a tie)
+	rows, err = db.QueryContext(ctx, `SELECT account_id, date, amount, fx FROM snapshots ORDER BY date, account_id`)
 	if err != nil {
 		return nil, fmt.Errorf("export snapshots: %w", err)
 	}
@@ -62,15 +116,18 @@ func exportCSV(ctx context.Context, db *sql.DB) ([]byte, error) {
 		}
 		snaps = append(snaps, s)
 		vals[s.AccountID][s.Date] = s.Amount
-		if s.FX != 1 {
-			fxByDate[s.Date] = s.FX
+		if cur := curOf[s.AccountID]; s.FX != 1 {
+			if fx[cur] == nil {
+				fx[cur] = map[string]float64{}
+			}
+			fx[cur][s.Date] = s.FX
 		}
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("export snapshots: %w", err)
 	}
 
-	totals := series(snaps, kindOf)
+	totals := series(snaps, kindOf, byKey)
 	dates := make([]string, len(totals))
 	for i, r := range totals {
 		dates[i] = r.Date
@@ -85,9 +142,9 @@ func exportCSV(ctx context.Context, db *sql.DB) ([]byte, error) {
 		return nil, err
 	}
 	base := set["base_currency"]
-	w.Write(append([]string{"帳戶", "類別", "幣別", "封存"}, dates...))
+	w.Write(append([]string{L["account"], L["kind"], L["currency"], L["archived"]}, dates...))
 	for _, a := range accts {
-		row := []string{a.name, kindLabel[a.kind], a.cur, map[bool]string{true: "是", false: ""}[a.archived]}
+		row := []string{escapeCell(a.name), escapeCell(byKey[a.kind].Name), a.cur, map[bool]string{true: L["yes"], false: ""}[a.archived]}
 		for _, d := range dates {
 			if v, ok := vals[a.id][d]; ok {
 				row = append(row, strconv.FormatFloat(v, 'f', -1, 64))
@@ -97,20 +154,27 @@ func exportCSV(ctx context.Context, db *sql.DB) ([]byte, error) {
 		}
 		w.Write(row)
 	}
-	fx := []string{"匯率(對 " + base + ")", "", "", ""}
-	for _, d := range dates {
-		if v, ok := fxByDate[d]; ok {
-			fx = append(fx, strconv.FormatFloat(v, 'f', -1, 64))
-		} else {
-			fx = append(fx, "")
-		}
+	curs := make([]string, 0, len(fx))
+	for cur := range fx {
+		curs = append(curs, cur)
 	}
-	w.Write(fx)
-	for _, k := range []string{"bank", "tw_stock", "us_stock", "movable", "real_estate", "crypto", "liability"} {
-		row := []string{"小計 " + kindLabel[k] + "(" + base + ")", "", base, ""}
+	sort.Strings(curs)
+	for _, cur := range curs { // one rate row per foreign currency
+		row := []string{fmt.Sprintf(L["fx"], cur, base), "", cur, ""}
+		for _, d := range dates {
+			if v, ok := fx[cur][d]; ok {
+				row = append(row, strconv.FormatFloat(v, 'f', -1, 64))
+			} else {
+				row = append(row, "")
+			}
+		}
+		w.Write(row)
+	}
+	for _, k := range kinds {
+		row := []string{escapeCell(fmt.Sprintf(L["subtotal"], k.Name, base)), "", base, ""}
 		nonzero := false
 		for _, r := range totals {
-			v := r.ByKind[k]
+			v := r.ByKind[k.Key]
 			nonzero = nonzero || v != 0
 			row = append(row, fmt.Sprintf("%.0f", v))
 		}
@@ -118,7 +182,7 @@ func exportCSV(ctx context.Context, db *sql.DB) ([]byte, error) {
 			w.Write(row)
 		}
 	}
-	net := []string{"淨資產(" + base + ")", "", base, ""}
+	net := []string{fmt.Sprintf(L["net"], base), "", base, ""}
 	for _, r := range totals {
 		net = append(net, fmt.Sprintf("%.0f", r.Total))
 	}

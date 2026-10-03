@@ -26,10 +26,21 @@ func Migrate(db *sql.DB) error {
 		if err != nil {
 			return err
 		}
-		if _, err := db.Exec(string(q)); err != nil {
+		// One transaction per file (SQLite DDL is transactional), so a migration that stops half-way
+		// leaves nothing applied and can simply run again.
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(string(q)); err != nil {
+			tx.Rollback()
 			return fmt.Errorf("migrate %s: %w", files[i], err)
 		}
-		if _, err := db.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, i+1)); err != nil {
+		if _, err := tx.Exec(fmt.Sprintf(`PRAGMA user_version = %d`, i+1)); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("migrate %s: %w", files[i], err)
+		}
+		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("migrate %s: %w", files[i], err)
 		}
 	}

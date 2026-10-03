@@ -1,13 +1,44 @@
 package ledger
 
 import (
+	"math"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 )
 
-// Kinds of account. Liabilities are entered as positive numbers and subtracted.
-var kinds = map[string]bool{"bank": true, "tw_stock": true, "us_stock": true, "movable": true, "real_estate": true, "crypto": true, "liability": true}
+// Kind is a user-defined account class (table account_kinds). Accounts of a kind whose
+// liquidity is "liability" are entered as positive numbers and subtracted.
+type Kind struct {
+	Key       string `json:"key"`
+	Name      string `json:"name"`
+	Color     string `json:"color"`
+	Liquidity string `json:"liquidity"`
+	Sort      int    `json:"sort"`
+}
+
+var (
+	kindKeyRe = regexp.MustCompile(`^[a-z][a-z0-9_]{1,31}$`)
+	colorRe   = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+)
+
+func validLiquidity(s string) bool {
+	return s == "liquid" || s == "invest" || s == "fixed" || s == "liability"
+}
+
+// validKindFields checks everything but the key, which PUT /api/kinds/:key takes from the URL.
+func validKindFields(k Kind) string {
+	switch {
+	case strings.TrimSpace(k.Name) == "" || len([]rune(k.Name)) > 30:
+		return "類別名稱必填,最多 30 字"
+	case !colorRe.MatchString(k.Color):
+		return "顏色格式要是 #rrggbb"
+	case !validLiquidity(k.Liquidity):
+		return "流動性要是 liquid、invest、fixed 或 liability"
+	}
+	return ""
+}
 
 type Account struct {
 	ID       int64   `json:"id"`
@@ -15,6 +46,8 @@ type Account struct {
 	Kind     string  `json:"kind"`
 	Currency string  `json:"currency"`
 	Archived bool    `json:"archived"`
+	Sort     int     `json:"sort"`
+	Note     string  `json:"note"`
 	Amount   float64 `json:"amount"` // latest, original currency
 	FX       float64 `json:"fx"`     // latest rate to the base currency
 	History  []Point `json:"history"`
@@ -49,13 +82,14 @@ type Event struct {
 // series carries each account's last known balance forward to every snapshot date,
 // so updating one account doesn't make the others look like they dropped to zero.
 // ponytail: recomputed per request, O(dates*accounts); fine for a personal ledger.
-func series(snaps []Snapshot, kindOf map[int64]string) []Row {
+// Sign comes from the kind's liquidity, so a user-defined liability kind subtracts too.
+func series(snaps []Snapshot, kindOf map[int64]string, kinds map[string]Kind) []Row {
 	sort.SliceStable(snaps, func(i, j int) bool { return snaps[i].Date < snaps[j].Date })
 	last := map[int64]float64{}
 	var rows []Row
 	for i, s := range snaps {
 		v := s.Amount * s.FX
-		if kindOf[s.AccountID] == "liability" {
+		if kinds[kindOf[s.AccountID]].Liquidity == "liability" {
 			v = -v
 		}
 		last[s.AccountID] = v
@@ -72,7 +106,28 @@ func series(snaps []Snapshot, kindOf map[int64]string) []Row {
 	return rows
 }
 
-func validDate(s string) bool { _, err := time.Parse("2006-01-02", s); return err == nil }
+// Bounds keep every stored figure encodable as JSON (no Inf/NaN) and far from float precision trouble.
+const (
+	maxAmount = 1e15
+	maxFX     = 1e6
+)
+
+// validSnapshot is shared by POST /api/snapshots and the CSV import. The comparisons are false for NaN.
+// Callers check futureDate first so they can say why.
+func validSnapshot(s Snapshot) bool {
+	return validDate(s.Date) && !futureDate(s.Date) && math.Abs(s.Amount) <= maxAmount && s.FX > 0 && s.FX <= maxFX
+}
+
+// validDate takes YYYY-MM-DD in 1900–2199: wide enough for any household record or 40-year mortgage,
+// narrow enough that a typo can't make loanViews build a schedule across millennia.
+func validDate(s string) bool {
+	t, err := time.Parse("2006-01-02", s)
+	return err == nil && t.Year() >= 1900 && t.Year() < 2200
+}
+
+// futureDate: a balance can't be recorded for a day that hasn't happened. One day of slack covers the
+// user's time zone being ahead of the server's.
+func futureDate(s string) bool { return s > time.Now().AddDate(0, 0, 1).Format("2006-01-02") }
 
 func validCurrency(s string) bool {
 	return len(s) == 3 && strings.Trim(strings.ToUpper(s), "ABCDEFGHIJKLMNOPQRSTUVWXYZ") == ""
@@ -80,8 +135,12 @@ func validCurrency(s string) bool {
 
 func validLoan(l Loan) string {
 	switch {
-	case strings.TrimSpace(l.Name) == "" || l.Principal <= 0:
+	case strings.TrimSpace(l.Name) == "" || !(l.Principal > 0):
 		return "名稱和本金必填"
+	case len([]rune(strings.TrimSpace(l.Name))) > maxName:
+		return "文字太長"
+	case l.Principal > maxAmount:
+		return "本金太大"
 	case l.Rate < 0 || l.Rate > 0.2:
 		return "年利率要在 0–20% 之間"
 	case l.TotalMonths <= 0 || l.TotalMonths > 600 || l.GraceMonths < 0 || l.GraceMonths >= l.TotalMonths:

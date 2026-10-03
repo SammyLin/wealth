@@ -93,10 +93,29 @@ func loanViews(loans []Loan, now time.Time) ([]LoanView, []MonthPay) {
 	if len(loans) == 0 {
 		return views, sched
 	}
+	// Rows saved before validLoan had bounds are still listed (so they can be deleted), with non-finite
+	// figures zeroed, but left out of the schedule: one bad row must not break /api/state.
+	fin := func(x float64) float64 {
+		if math.IsInf(x, 0) || math.IsNaN(x) {
+			return 0
+		}
+		return x
+	}
+	var ok []Loan
+	for _, l := range loans {
+		end := l.start().AddDate(0, l.TotalMonths, 0)
+		views = append(views, LoanView{l, l.GraceEnd(), fin(l.Payment(now)), fin(l.Principal * l.Rate / 12), fin(l.levelPayment()), fin(l.Balance(now)), end.Format("2006-01-02")})
+		if validLoan(l) == "" {
+			ok = append(ok, l)
+		}
+	}
+	loans = ok
+	if len(loans) == 0 {
+		return views, sched
+	}
 	first, last := loans[0].start(), loans[0].start()
 	for _, l := range loans {
 		end := l.start().AddDate(0, l.TotalMonths, 0)
-		views = append(views, LoanView{l, l.GraceEnd(), l.Payment(now), l.Principal * l.Rate / 12, l.levelPayment(), l.Balance(now), end.Format("2006-01-02")})
 		if l.start().Before(first) {
 			first = l.start()
 		}
