@@ -2,15 +2,16 @@ import { useEffect, useRef, useState, type FormEvent } from "react"
 import { Box, Button, Group, Modal, Stack, Text } from "@mantine/core"
 import { DateInput } from "@mantine/dates"
 import { useMediaQuery } from "@mantine/hooks"
-import { modals } from "@mantine/modals"
-import { notifications } from "@mantine/notifications"
 import { ArrowRight, CalendarDays, Check } from "lucide-react"
 import { getFx } from "../../api/client"
 import { useLedgerState, useMoney } from "../../api/useLedger"
-import { T, t, useLang } from "../../i18n"
-import { fmtDate, todayISO } from "../../lib/format"
+import { T, t } from "../../i18n"
+import { fmtDate, fmtInput, parseDay, todayISO } from "../../lib/format"
+import { askConfirm } from "../../shell/confirm"
+import { notifyUndo } from "../../shell/undo"
 import { RecordRow } from "./RecordRow"
-import { asOf, fmtInput, isLiability, parseDraft, prefill, type Draft } from "./sheet"
+import type { Account } from "../../api/types"
+import { asOf, isLiability, isStale, parseDraft, prefill, type Draft } from "./sheet"
 
 type Props = { opened: boolean; onClose: () => void }
 
@@ -33,11 +34,12 @@ export function RecordModal({ opened, onClose }: Props) {
     if (confirming.current) return
     if (!unsaved) return onClose()
     confirming.current = true
-    modals.openConfirmModal({
+    askConfirm({
       title: T`放棄 ${unsaved} 筆未儲存的餘額?`,
-      children: <Text fz="sm">{t("關掉後這次填的數字都不會保留。")}</Text>,
-      labels: { confirm: t("放棄"), cancel: t("繼續填") },
-      confirmProps: { color: "red" },
+      body: t("關掉後這次填的數字都不會保留。"),
+      confirm: t("放棄"),
+      cancel: t("繼續填"),
+      danger: true,
       onConfirm: onClose,
       onClose: () => setTimeout(() => (confirming.current = false)),
     })
@@ -49,22 +51,10 @@ export function RecordModal({ opened, onClose }: Props) {
   )
 }
 
-/** Accepts 2026-10-03, 2026.10.03, 2026/10/3 and (English UI) "Oct 3, 2026" typed into the date field. */
-function parseDay(v: string): string | null {
-  const m = /^(\d{4})[-./](\d{1,2})[-./](\d{1,2})$/.exec(v.trim())
-  if (m) {
-    const iso = `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`
-    return Number.isNaN(Date.parse(iso)) ? null : iso
-  }
-  const d = new Date(v) // "Oct 3, 2026": parsed as local midnight
-  return /[a-z]/i.test(v) && !Number.isNaN(d.getTime()) ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` : null
-}
-
 type FormProps = { onClose: () => void; onCancel: () => void; onUnsaved: (n: number) => void; focusFirst: boolean }
 
 function RecordForm({ onClose, onCancel, onUnsaved, focusFirst }: FormProps) {
-  const { lang } = useLang()
-  const { state, saveSnapshots } = useLedgerState()
+  const { state, saveSnapshots, deleteSnapshot } = useLedgerState()
   const money = useMoney()
   const base = state.settings.base_currency
   const today = todayISO()
@@ -73,35 +63,35 @@ function RecordForm({ onClose, onCancel, onUnsaved, focusFirst }: FormProps) {
   const [drafts, setDrafts] = useState<Record<number, Draft>>(() => Object.fromEntries(active.map((a) => [a.id, prefill(a, today)])))
   const [fxLoading, setFxLoading] = useState<string[]>([])
   const [fxFailed, setFxFailed] = useState<string[]>([])
+  const [dayRates, setDayRates] = useState<Record<string, string>>({}) // the chosen day's rate per currency
   const [saving, setSaving] = useState(false)
   const [dateOpen, setDateOpen] = useState(false)
-  const fxEdited = useRef(new Set<number>()) // rows whose rate the user typed; prefill leaves them alone
   const dateRef = useRef(date)
   const amountInputs = useRef<(HTMLInputElement | null)[]>([])
   const fxInputs = useRef<(HTMLInputElement | null)[]>([])
 
-  // Prefill each foreign currency with the chosen day's rate, except rows that already have a record that
-  // day (they keep its rate). On failure the earlier rate stays, still editable. Prefilled rates never count
-  // as a change by themselves (see parseDraft).
+  // Fetch each foreign currency's rate for the chosen day. A row takes it only once you type its balance
+  // (and not its rate), and only if it has no record that day: untouched rows keep showing, and saving,
+  // the rate their carried balance was recorded at, which is what the series uses for them. On failure the
+  // earlier rate stays, still editable.
   const loadFx = (d: string) => {
     dateRef.current = d
     const curs = [...new Set(active.filter((a) => !asOf(a, d).exact).map((a) => a.currency).filter((c) => c !== base))]
     setFxLoading(curs)
     setFxFailed([])
+    setDayRates({})
     for (const cur of curs)
       getFx(cur, d)
-        .then((rate) => {
-          if (dateRef.current !== d) return
-          const fx = String(rate) // full precision: rounding a weak currency's rate (IDR→USD 0.0000559) skews the value
-          setDrafts((prev) => {
-            const next = { ...prev }
-            for (const a of active)
-              if (a.currency === cur && !fxEdited.current.has(a.id) && !asOf(a, d).exact) next[a.id] = { ...next[a.id], fx }
-            return next
-          })
-        })
+        // full precision: rounding a weak currency's rate (IDR→USD 0.0000559) skews the value
+        .then((rate) => dateRef.current === d && setDayRates((r) => ({ ...r, [cur]: String(rate) })))
         .catch(() => dateRef.current === d && setFxFailed((f) => [...f, cur]))
         .finally(() => dateRef.current === d && setFxLoading((l) => l.filter((c) => c !== cur)))
+  }
+  /** What a row shows and saves: its draft, with the day's rate once its balance was typed. */
+  const view = (a: Account): Draft => {
+    const d = drafts[a.id]
+    const rate = dayRates[a.currency]
+    return d.touched && !d.fxTyped && rate && !asOf(a, date).exact ? { ...d, fx: rate } : d
   }
   // oxlint-disable-next-line react-hooks/exhaustive-deps -- once per dialog session; date changes call loadFx directly
   useEffect(() => loadFx(date), [])
@@ -114,14 +104,14 @@ function RecordForm({ onClose, onCancel, onUnsaved, focusFirst }: FormProps) {
         active.map((a) => {
           const p = prev[a.id]
           if (!p.touched) return [a.id, prefill(a, d)]
-          return [a.id, fxEdited.current.has(a.id) ? p : { ...p, fx: prefill(a, d).fx }]
+          return [a.id, p.fxTyped ? p : { ...p, fx: prefill(a, d).fx }]
         }),
       ),
     )
     loadFx(d)
   }
 
-  const rows = active.map((a) => ({ a, parsed: parseDraft(a, drafts[a.id], base, isLiability(a, state.kinds), date) }))
+  const rows = active.map((a) => ({ a, parsed: parseDraft(a, view(a), base, isLiability(a, state.kinds), date) }))
   const changed = rows.filter((r) => r.parsed.kind === "ok" && r.parsed.dirty)
   const firstError = rows.findIndex((r) => r.parsed.kind === "error")
   // Net worth on the chosen day (the series carries every account forward), so a backdated record previews correctly.
@@ -133,10 +123,8 @@ function RecordForm({ onClose, onCancel, onUnsaved, focusFirst }: FormProps) {
   // A typed row whose rate is still on its way would otherwise save with the old (or no) rate.
   const waitingFx = active.some((a) => drafts[a.id].touched && fxLoading.includes(a.currency))
 
-  const patch = (id: number, p: Partial<Draft>) => {
-    if (p.fx !== undefined) fxEdited.current.add(id)
-    setDrafts((prev) => ({ ...prev, [id]: { ...prev[id], ...p, touched: true } }))
-  }
+  const patch = (id: number, p: Partial<Draft>) =>
+    setDrafts((prev) => ({ ...prev, [id]: { ...prev[id], ...p, touched: true, ...(p.fx !== undefined && { fxTyped: true }) } }))
 
   // A column pasted from a spreadsheet fills this row and the ones below it.
   const pasteMany = (from: number, values: string[]) =>
@@ -151,14 +139,22 @@ function RecordForm({ onClose, onCancel, onUnsaved, focusFirst }: FormProps) {
 
   const save = async () => {
     setSaving(true)
+    // Undo puts back what each saved row replaced: the earlier record that day, or no record at all
+    // (a batch saved under the wrong date comes back out in one click).
+    const replaced = changed.map(({ a }) => ({ a, point: asOf(a, date).exact ? asOf(a, date).point : undefined }))
+    const undo = async () => {
+      const back = replaced.flatMap(({ a, point }) => (point ? [{ account_id: a.id, date, amount: point.amount, fx: point.fx }] : []))
+      if (back.length) await saveSnapshots(back)
+      for (const { a, point } of replaced) if (!point) await deleteSnapshot(a.id, date)
+    }
     try {
       await saveSnapshots(
         changed.map(({ a, parsed: p }) => ({ account_id: a.id, date, amount: p.kind === "ok" ? p.amount : 0, fx: p.kind === "ok" ? p.fx : 1 })),
       )
-      notifications.show({
-        icon: <Check size={16} />,
+      notifyUndo({
         title: T`已記錄 ${fmtDate(date)}`,
         message: T`${changed.length} 個帳戶 · 淨資產 ${money(after)}(${money(diff, { signed: true })})`,
+        undo,
       })
       onClose()
     } catch {
@@ -178,11 +174,11 @@ function RecordForm({ onClose, onCancel, onUnsaved, focusFirst }: FormProps) {
     if (!changed.length || !date) return
     const replaced = changed.filter((r) => r.parsed.kind === "ok" && r.parsed.overwrites).map((r) => r.a.name)
     if (!replaced.length) return void save()
-    modals.openConfirmModal({
+    askConfirm({
       title: T`覆蓋 ${fmtDate(date)} 的紀錄?`,
-      children: <Text fz="sm">{T`這些帳戶在 ${fmtDate(date)} 已經有餘額,會改成這次填的數字:${replaced}`}</Text>,
-      labels: { confirm: t("覆蓋"), cancel: t("取消") },
-      confirmProps: { color: "red" },
+      body: T`這些帳戶在 ${fmtDate(date)} 已經有餘額,會改成這次填的數字:${replaced}`,
+      confirm: t("覆蓋"),
+      danger: true,
       onConfirm: () => void save(),
     })
   }
@@ -197,7 +193,7 @@ function RecordForm({ onClose, onCancel, onUnsaved, focusFirst }: FormProps) {
             onChange={(v) => v && changeDate(v)}
             dateParser={parseDay}
             maxDate={today}
-            placeholder={lang === "en" ? "Oct 3, 2026" : "YYYY.MM.DD"}
+            placeholder={t("YYYY.MM.DD")}
             // Esc with the calendar open closes only the calendar (Mantine's modal skips events from such targets)
             data-mantine-stop-propagation={dateOpen || undefined}
             popoverProps={{ onOpen: () => setDateOpen(true), onClose: () => setDateOpen(false) }}
@@ -225,10 +221,11 @@ function RecordForm({ onClose, onCancel, onUnsaved, focusFirst }: FormProps) {
               kind={state.kinds.find((k) => k.key === a.kind)}
               base={base}
               date={date}
-              draft={drafts[a.id]}
+              draft={view(a)}
               parsed={parsed}
               fxLoading={fxLoading.includes(a.currency)}
               initialFocus={focusFirst && i === 0}
+              stale={isStale(a, today)}
               amountRef={(el) => {
                 amountInputs.current[i] = el
               }}
@@ -238,11 +235,6 @@ function RecordForm({ onClose, onCancel, onUnsaved, focusFirst }: FormProps) {
               onChange={(p) => patch(a.id, p)}
               onPasteMany={(values) => pasteMany(i, values)}
               onAmountBlur={() => parsed.kind === "ok" && drafts[a.id].touched && setDrafts((prev) => ({ ...prev, [a.id]: { ...prev[a.id], amt: fmtInput(parsed.amount) } }))}
-              onFxEnter={() => {
-                const next = amountInputs.current[i + 1]
-                if (next) next.focus()
-                else submit()
-              }}
               onEnter={() => {
                 const next = amountInputs.current[i + 1]
                 if (next) next.focus()
@@ -267,7 +259,7 @@ function RecordForm({ onClose, onCancel, onUnsaved, focusFirst }: FormProps) {
                 <Text className="num" fz="sm" c="dimmed">
                   {money(before)}
                 </Text>
-                <ArrowRight size={14} aria-label={t("變成")} />
+                <ArrowRight size={14} role="img" aria-label={t("變成")} />
                 <Text className="num" fz="lg" fw={500}>
                   {money(after)}
                 </Text>

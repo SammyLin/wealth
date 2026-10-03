@@ -2,16 +2,30 @@ import { Autocomplete, ColorSwatch, Group, Select, type AutocompleteProps, type 
 import { useLedgerState } from "../../api/useLedger"
 import { t } from "../../i18n"
 import { CURRENCIES } from "../../lib/format"
+import { staleSearch } from "./logic"
 
-/** Select of the user's kinds; the swatch is a second cue next to the name, never the only one. */
+/**
+ * Select of the user's kinds; the swatch is a second cue next to the name, never the only one.
+ * Type-ahead: typing "Lia" highlights the first match, and Enter or Tab commits it. Enter never submits the
+ * form while the typed text isn't a kind's name: Mantine only stops Enter when an option is highlighted, so a
+ * half-typed or unmatched name would otherwise submit with the previous kind (a credit card saved as a bank).
+ */
 export function KindSelect(props: Omit<SelectProps, "data">) {
   const { state } = useLedgerState()
   const color = (key?: string | null) => state.kinds.find((k) => k.key === key)?.color ?? "transparent"
+  const data = state.kinds.map((k) => ({ value: k.key, label: t(k.name) }))
   return (
     <Select
       allowDeselect={false}
+      searchable
+      selectFirstOptionOnChange
+      autoSelectOnBlur
       {...props}
-      data={state.kinds.map((k) => ({ value: k.key, label: t(k.name) }))}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && staleSearch(e.currentTarget.value, props.value, data)) e.preventDefault()
+        props.onKeyDown?.(e)
+      }}
+      data={data}
       leftSection={<ColorSwatch size={12} color={color(props.value)} withShadow={false} />}
       renderOption={({ option }) => (
         <Group gap="xs" wrap="nowrap">
@@ -34,6 +48,11 @@ export function CurrencyInput(props: Omit<AutocompleteProps, "data">) {
       spellCheck={false}
       {...props}
       data={data}
+      // select on focus, so typing "EUR" replaces the prefilled base currency instead of being cut off at 3 letters
+      onFocus={(e) => {
+        e.currentTarget.select()
+        props.onFocus?.(e)
+      }}
       onChange={(v) => props.onChange?.(v.toUpperCase())}
     />
   )

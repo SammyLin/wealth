@@ -1,17 +1,7 @@
-import type { Liquidity } from "../../api/types"
-
 // Pure helpers for the accounts feature. Self-check: `node src/features/accounts/logic.check.ts`.
 
 /** Same rule as the server (POST /api/kinds). */
 export const KEY_RE = /^[a-z][a-z0-9_]{1,31}$/
-
-/** Liquidity tiers in balance-sheet order. `label` is Chinese; render with t(). */
-export const LIQUIDITY: { value: Liquidity; label: string }[] = [
-  { value: "liquid", label: "流動資產" },
-  { value: "invest", label: "投資資產" },
-  { value: "fixed", label: "自用資產" },
-  { value: "liability", label: "負債" },
-]
 
 /** Default kind colors first, then a few that sit well next to them. */
 export const SWATCHES = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#4a3aa7", "#e34948", "#0e8a8a", "#8c6d3f", "#6f6556"]
@@ -35,10 +25,17 @@ export function slugKey(name: string, taken: readonly string[], fallback = "kind
   return key
 }
 
-/** Copy of `list` with item `i` moved one step by `delta`; unchanged copy at the ends. */
-export function moved<T>(list: readonly T[], i: number, delta: -1 | 1): T[] {
+/** Copy of `list` with item `from` moved to index `to` (clamped to the ends): a step, or straight to the top or bottom. */
+export function moved<T>(list: readonly T[], from: number, to: number): T[] {
   const next = [...list]
-  const j = i + delta
-  if (j >= 0 && j < next.length) [next[i], next[j]] = [next[j], next[i]]
+  const [item] = next.splice(from, 1)
+  next.splice(Math.max(0, Math.min(to, next.length)), 0, item)
   return next
 }
+
+/**
+ * KindSelect's Enter guard: true while the text typed in the select isn't the selected option's label
+ * (half-typed, or matching nothing), so Enter must not submit the form with the previous value.
+ */
+export const staleSearch = (text: string, value: string | null | undefined, data: { value: string; label: string }[]) =>
+  text !== (data.find((d) => d.value === value)?.label ?? "")

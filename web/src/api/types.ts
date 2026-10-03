@@ -75,3 +75,11 @@ export type AccountPatch = Partial<Pick<Account, "name" | "currency" | "archived
 export type KindInput = Omit<Kind, "key">
 export type EventInput = Omit<Event, "id"> & { id?: number }
 export type LoanInput = Omit<Loan, "id"> & { id?: number }
+
+// Errors and the CSV import preview (POST /api/import?dry_run=1)
+export type ApiError = { error: string; key?: string; params?: unknown[] }
+/** fx 0 = looked up on import; currency "" for a name with no account and no pick yet. */
+type PreviewRow = { line: number; date: string; account: string; amount: number; fx: number; currency: string; overwrites: boolean }
+/** A name no account has yet, with the CSV's kind / currency cells (raw, may be empty) as defaults. */
+export type UnknownAccount = { name: string; kind: string; currency: string }
+export type ImportPreview = { rows: PreviewRow[]; unknown_accounts: UnknownAccount[]; errors: ApiError[]; fx_lookups: number }

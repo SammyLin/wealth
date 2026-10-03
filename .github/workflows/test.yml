@@ -3,6 +3,7 @@ name: test
 on:
   push:
   pull_request:
+  workflow_call: # release.yml runs these first; a failing test never publishes
 
 jobs:
   test:
@@ -13,11 +14,14 @@ jobs:
         with:
           go-version-file: go.mod
       # Go first, on the bare checkout: a fresh clone must compile and test without Node (web/dist/.gitkeep)
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; echo "run gofmt -w on the files above"; exit 1; }
       - run: go vet ./...
+      - run: go run honnef.co/go/tools/cmd/staticcheck@2026.1 ./...
       - run: go test ./...
       - uses: actions/setup-node@v5
         with:
-          node-version: 24
+          node-version: 24 # package.json engines: >= 22.18 (node --test runs the .ts checks directly)
           cache: npm
           cache-dependency-path: web/package-lock.json
       - run: cd web && npm ci && npm run lint && npm run check && npm run build

@@ -1,4 +1,5 @@
 import { ActionIcon, Badge, Box, Group, Paper, Progress, SimpleGrid, Stack, Text, Tooltip } from "@mantine/core"
+import { Stat } from "../../shell/Stat"
 import { CalendarClock, Link2, Pencil, Trash2 } from "lucide-react"
 import type { LoanView } from "../../api/types"
 import { useMoney } from "../../api/useLedger"
@@ -10,7 +11,7 @@ import { loanColor, loanStatus, nextChange, type LoanStatus } from "./math"
 const STATUS: Record<LoanStatus, { label: string; color: string }> = {
   pending: { label: "尚未開始", color: "gray" },
   grace: { label: "寬限期中", color: "gold" },
-  repaying: { label: "還本中", color: "var(--wealth-up)" },
+  repaying: { label: "還本中", color: "up" },
   paid: { label: "已繳清", color: "gray" },
 }
 
@@ -27,12 +28,15 @@ export function LoanCard({ loan: l, index, account, today, onEdit, onDelete }: P
     <Paper withBorder p="md" radius="md">
       <Group justify="space-between" wrap="nowrap" align="flex-start" gap="xs">
         <Box miw={0}>
-          <Group gap={8} wrap="nowrap">
-            <Box w={10} h={10} style={{ borderRadius: 3, flex: "none", background: loanColor(index) }} aria-hidden />
-            <Text fw={600} truncate>
-              {l.name}
-            </Text>
-            <Badge size="md" variant="outline" color={STATUS[status].color} tt="none" style={{ flex: "none" }}>
+          {/* the name wraps instead of truncating ("房貸 A…" at 390px), and the badge drops under it when they don't fit */}
+          <Group gap={8} wrap="wrap" style={{ rowGap: 4 }}>
+            <Group gap={8} wrap="nowrap" miw={0}>
+              <Box w={10} h={10} style={{ borderRadius: 3, flex: "none", background: loanColor(index) }} aria-hidden />
+              <Text fw={600} style={{ overflowWrap: "anywhere" }}>
+                {l.name}
+              </Text>
+            </Group>
+            <Badge size="md" variant="outline" color={STATUS[status].color} style={{ flex: "none" }}>
               {t(STATUS[status].label)}
             </Badge>
           </Group>
@@ -50,7 +54,7 @@ export function LoanCard({ loan: l, index, account, today, onEdit, onDelete }: P
             </ActionIcon>
           </Tooltip>
           <Tooltip label={t("刪除")}>
-            <ActionIcon aria-label={T`刪除 ${l.name}`} color="red" onClick={onDelete}>
+            <ActionIcon aria-label={T`刪除 ${l.name}`} color="down" onClick={onDelete}>
               <Trash2 size={16} />
             </ActionIcon>
           </Tooltip>
@@ -86,18 +90,5 @@ export function LoanCard({ loan: l, index, account, today, onEdit, onDelete }: P
         </Group>
       )}
     </Paper>
-  )
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <Text fz="xs" c="dimmed">
-        {label}
-      </Text>
-      <Text className="num" fz="lg" lh={1.3}>
-        {value}
-      </Text>
-    </div>
   )
 }

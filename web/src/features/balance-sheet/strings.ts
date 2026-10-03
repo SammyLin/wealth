@@ -56,4 +56,6 @@ export const en: Record<string, string> = {
   "繼續填": "Keep editing",
   "匯率": "Rate",
   "請填匯率": "Enter a rate",
+  "上次 {} · 超過 90 天": "Last {} · over 90 days ago",
+  "YYYY.MM.DD": "Oct 3, 2026",
 }

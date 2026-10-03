@@ -42,7 +42,11 @@ export const en: Record<string, string> = {
   "已刪除「{}」": "Deleted “{}”",
   // history
   "歷史紀錄": "History",
-  "{} 筆 · 改完按該列的儲存": "{} record · save each row when done|{} records · save each row when done",
+  "{} 筆 · 改完按 Enter 或離開該列就會儲存": "{} record · saves on Enter or when you leave the row|{} records · each saves on Enter or when you leave its row",
+  "儲存中": "Saving",
+  "移到最上面": "Move to top",
+  "移到最下面": "Move to bottom",
+  "移動「{}」": "Move “{}”",
   "還沒有紀錄。到「記一筆」填第一筆餘額。": "No records yet. Use Record to enter the first balance.",
   "日期": "Date",
   "餘額({})": "Balance ({})",
@@ -53,9 +57,7 @@ export const en: Record<string, string> = {
   "只顯示最近的": "Show recent only",
   "{} 餘額": "{} balance",
   "{} 匯率": "{} rate",
-  "儲存這列": "Save row",
   "刪除這列": "Delete row",
-  "儲存 {} 這筆": "Save the {} record",
   "刪除 {} 這筆": "Delete the {} record",
   "已更新 {} 的紀錄": "Updated the {} record",
   "刪除 {} 這筆紀錄?": "Delete the {} record?",
@@ -102,4 +104,5 @@ export const en: Record<string, string> = {
   "ids 不能重複": "ids can't repeat",
   "它的 {} 筆紀錄會改從淨資產扣掉,所有歷史的淨資產都會重算。": "Its {} record will now be subtracted from net worth, and every past net worth is recalculated.|Its {} records will now be subtracted from net worth, and every past net worth is recalculated.",
   "它的 {} 筆紀錄會改算進資產,所有歷史的淨資產都會重算。": "Its {} record will now count as an asset, and every past net worth is recalculated.|Its {} records will now count as an asset, and every past net worth is recalculated.",
+  "已經有同名的帳戶": "An account with that name already exists",
 }

@@ -11,12 +11,14 @@ import { FirstRun } from "./shell/FirstRun"
 import { SectionNumber } from "./shell/SectionCard"
 import { useLayout } from "./shell/sections"
 import { Overview } from "./features/overview/Hero"
+import { RangeProvider } from "./features/overview/range"
 
 // Dialogs load on first open (they carry @mantine/dates, the form library and the CSV preview), which keeps
 // them out of the entry chunk; once loaded they stay mounted so close transitions still play.
 const RecordModal = lazy(() => import("./features/balance-sheet/RecordModal").then((m) => ({ default: m.RecordModal })))
 const AccountsManager = lazy(() => import("./features/accounts").then((m) => ({ default: m.AccountsManager })))
 const SettingsDrawer = lazy(() => import("./features/settings").then((m) => ({ default: m.SettingsDrawer })))
+const ImportDialog = lazy(() => import("./features/settings").then((m) => ({ default: m.ImportDialog })))
 
 export default function App() {
   const { lang } = useLang() // re-renders the whole tree when the language changes
@@ -66,6 +68,7 @@ function Shell() {
           <Suspense fallback={null}>
             {loaded.includes("accounts") && <AccountsManager opened={dialog?.name === "accounts"} accountId={dialog?.accountId} onClose={close} />}
           </Suspense>
+          <Suspense fallback={null}>{loaded.includes("import") && <ImportDialog opened={dialog?.name === "import"} onClose={close} />}</Suspense>
         </>
       )}
     </DialogContext.Provider>
@@ -76,9 +79,18 @@ function Body() {
   const { state, error } = useLedger()
   const { visible } = useLayout()
   if (!state) return error ? <LoadError error={error} /> : <Loading />
-  if (!state.accounts.length) return <FirstRun />
+  // a refresh that failed after the data loaded: keep showing it, but say it may be stale
+  const stale = error && <LoadError error={error} stale />
+  if (!state.accounts.length)
+    return (
+      <>
+        {stale}
+        <FirstRun />
+      </>
+    )
   return (
-    <>
+    <RangeProvider>
+      {stale}
       <Overview />
       <Stack gap="lg">
         {visible.map(({ id, component: Section }, i) => (
@@ -90,9 +102,9 @@ function Body() {
         ))}
       </Stack>
       <Text c="dimmed" fz="xs" ta="center" mt="xl">
-        {t("外幣以當日中間價換算;沒更新的帳戶沿用上一筆。")}
+        {t("外幣以記錄當天的中間價換算;沒更新的帳戶沿用上一筆的餘額和匯率。")}
       </Text>
-    </>
+    </RangeProvider>
   )
 }
 
@@ -123,7 +135,7 @@ function SectionSkeleton() {
   )
 }
 
-function LoadError({ error }: { error: Error }) {
+function LoadError({ error, stale }: { error: Error; stale?: boolean }) {
   const { refresh } = useLedger()
   const [retrying, setRetrying] = useState(false)
   const retry = async () => {
@@ -132,11 +144,11 @@ function LoadError({ error }: { error: Error }) {
     setRetrying(false)
   }
   return (
-    <Alert mt="xl" color="red" variant="light" icon={<CloudOff size={18} />} title={t("讀不到資料")}>
+    <Alert mt={stale ? "md" : "xl"} color="down" variant="light" icon={<CloudOff size={18} />} title={stale ? t("畫面上的資料可能不是最新的") : t("讀不到資料")}>
       <Text fz="sm" mb="md">
         {error.message}
       </Text>
-      <Button color="red" variant="outline" size="xs" leftSection={<RotateCw size={14} />} loading={retrying} onClick={retry}>
+      <Button color="down" variant="outline" size="xs" leftSection={<RotateCw size={14} />} loading={retrying} onClick={retry}>
         {t("再試一次")}
       </Button>
     </Alert>

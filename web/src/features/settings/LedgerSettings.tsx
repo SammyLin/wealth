@@ -2,10 +2,12 @@ import { useState } from "react"
 import { Autocomplete, Button, Group, Stack, TextInput } from "@mantine/core"
 import { useForm } from "@mantine/form"
 import { notifications } from "@mantine/notifications"
-import { Lock, Save } from "lucide-react"
+import { Check, Lock, Save } from "lucide-react"
+import type { Settings } from "../../api/types"
 import { useLedgerState } from "../../api/useLedger"
 import { t } from "../../i18n"
 import { CURRENCIES } from "../../lib/format"
+import { useDirty } from "../../shell/dirty"
 const MAX_TEXT = 60 // server limit for title / subtitle (runes)
 
 export function LedgerSettings() {
@@ -14,22 +16,31 @@ export function LedgerSettings() {
   // Every stored fx is relative to the base currency, so the server locks it once a balance exists.
   const locked = state.accounts.some((a) => a.history.length > 0)
   const [saving, setSaving] = useState(false)
+  // The stored default title is a Chinese key, shown translated; only fields the user changed are saved, so
+  // editing the subtitle in English never writes "My ledger" over the key.
+  const shown = { title: t(s.title), subtitle: t(s.subtitle), base_currency: s.base_currency }
   const form = useForm({
-    initialValues: { title: t(s.title), subtitle: t(s.subtitle), base_currency: s.base_currency }, // the stored default title is a Chinese key; show it translated
+    initialValues: shown,
     validate: {
       title: (v) => (v.trim() ? null : t("名稱不能空白")),
       base_currency: (v) => (/^[A-Za-z]{3}$/.test(v.trim()) ? null : t("基準幣別要是三個英文字母,例如 TWD、USD")),
     },
   })
 
+  useDirty(form.isDirty())
+
   const submit = form.onSubmit(async (v) => {
     setSaving(true)
     try {
       const next = { title: v.title.trim(), subtitle: v.subtitle.trim(), base_currency: v.base_currency.trim().toUpperCase() }
-      await saveSettings(locked ? { title: next.title, subtitle: next.subtitle } : next)
+      const patch: Partial<Settings> = {}
+      if (next.title !== shown.title) patch.title = next.title
+      if (next.subtitle !== shown.subtitle) patch.subtitle = next.subtitle
+      if (!locked && next.base_currency !== shown.base_currency) patch.base_currency = next.base_currency
+      if (Object.keys(patch).length) await saveSettings(patch)
       form.setValues(next)
       form.resetDirty(next)
-      notifications.show({ color: "green", message: t("已儲存設定") })
+      notifications.show({ color: "up", icon: <Check size={16} />, message: t("已儲存設定") })
     } catch {
       /* useLedger already showed the error */
     } finally {

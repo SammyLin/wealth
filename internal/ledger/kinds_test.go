@@ -87,6 +87,8 @@ func TestKindsCRUD(t *testing.T) {
 		t.Fatalf("created %+v", k)
 	}
 	wantStatus(t, callJSON(t, r, "POST", "/api/kinds", `{"key":"card","name":"x","color":"#000000","liquidity":"fixed"}`, nil), 409)
+	wantStatus(t, callJSON(t, r, "POST", "/api/kinds", `{"key":"card2","name":"銀行","color":"#000000","liquidity":"fixed"}`, nil), 409)
+	wantStatus(t, callJSON(t, r, "PUT", "/api/kinds/card", `{"name":"銀行","color":"#000000","liquidity":"fixed"}`, nil), 409)
 	for name, body := range map[string]string{
 		"bad key":       `{"key":"Card","name":"x","color":"#000000","liquidity":"fixed"}`,
 		"bad color":     `{"key":"abc","name":"x","color":"red","liquidity":"fixed"}`,
@@ -199,11 +201,31 @@ func TestSettingsUnitAndLayout(t *testing.T) {
 		"bad json":    `{"layout":"{nope"}`,
 		"empty":       `{"layout":""}`,
 		"layout size": string(huge),
+		"unknown id":  `{"layout":"{\"sections\":[{\"id\":\"bogus\"}]}"}`,
+		"twice":       `{"layout":"{\"sections\":[{\"id\":\"mix\"},{\"id\":\"mix\"}]}"}`,
+		"not a list":  `{"layout":"{\"sections\":5}"}`,
 	} {
 		if w := callJSON(t, r, "PUT", "/api/settings", body, nil); w.Code != 400 {
 			t.Errorf("%s: status %d", name, w.Code)
 		}
 	}
+}
+
+// The base currency is free until the first balance, then locked (every stored fx is relative to it).
+func TestSettingsBaseCurrencyLock(t *testing.T) {
+	r, _ := newTestRouter(t)
+	wantStatus(t, callJSON(t, r, "PUT", "/api/settings", `{"base_currency":"usd"}`, nil), 204)
+	var st struct{ Settings map[string]string }
+	callJSON(t, r, "GET", "/api/state", "", &st)
+	if st.Settings["base_currency"] != "USD" {
+		t.Fatalf("base %q", st.Settings["base_currency"])
+	}
+	var a Account
+	wantStatus(t, callJSON(t, r, "POST", "/api/accounts", `{"name":"A","kind":"bank"}`, &a), 201)
+	wantStatus(t, callJSON(t, r, "POST", "/api/snapshots", `[{"account_id":`+jsonID(a.ID)+`,"date":"2026-01-01","amount":1,"fx":1}]`, nil), 204)
+	wantStatus(t, callJSON(t, r, "PUT", "/api/settings", `{"base_currency":"TWD"}`, nil), 409)
+	wantStatus(t, callJSON(t, r, "PUT", "/api/settings", `{"base_currency":"USD","title":"x"}`, nil), 204) // unchanged is fine
+	wantStatus(t, callJSON(t, r, "PUT", "/api/settings", `{"base_currency":"US"}`, nil), 400)
 }
 
 func TestImportThenExport(t *testing.T) {
@@ -324,13 +346,19 @@ func (f fxRT) RoundTrip(*http.Request) (*http.Response, error) {
 	return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(string(f)))}, nil
 }
 
+// testdata/amounts.json is shared with web/src/lib/format.check.ts, so both parsers read the same inputs the same way.
 func TestParseAmount(t *testing.T) {
-	for in, want := range map[string]float64{"1,234,567": 1234567, "12.5萬": 125000, "3k": 3000, "−500": -500, "１２３": 123, "NT$1,000": 1000, "1.5億": 1.5e8, "0.1": 0.1} {
+	var v struct {
+		Valid   map[string]float64
+		Invalid []string
+	}
+	readJSON(t, "testdata/amounts.json", &v)
+	for in, want := range v.Valid {
 		if got := parseAmount(in); got != want {
 			t.Errorf("%q: %v want %v", in, got, want)
 		}
 	}
-	for _, in := range []string{"", "abc", "1.234,56", "12,34", "Inf", "NaN", "1e5"} {
+	for _, in := range v.Invalid {
 		if got := parseAmount(in); !math.IsNaN(got) {
 			t.Errorf("%q: %v want NaN", in, got)
 		}

@@ -1,6 +1,6 @@
 // Package wealth holds the files compiled into the binary. They live at the repo root
-// (web/dist is the Vite build, migrations/ is shared with wrangler's D1 migrations), and
-// go:embed can't reach parent directories, so the embed has to sit here.
+// (web/dist is the Vite build, migrations/ is shared with wrangler's D1 migrations), and an
+// embed directive can't reach parent directories, so the embed has to sit here.
 package wealth
 
 import "embed"

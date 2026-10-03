@@ -2,9 +2,10 @@ package ledger
 
 import (
 	"bytes"
-	"context"
+	"cmp"
 	"database/sql"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"io"
 	"math"
@@ -19,94 +20,139 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const (
-	maxImportBytes = 1 << 20
-	// A Worker request is capped at a few dozen subrequests on the free plan; each 20 rows is one D1 statement
-	// and each missing fx one outbound fetch, so both are capped instead of risking a half-applied import.
-	maxImportRows = 1000
-	maxFXLookups  = 30
-)
+// Each missing fx is one outbound fetch, and a Worker request has a few dozen subrequests on the free plan.
+const maxFXLookups = 30
 
 type importRow struct {
-	date, account string
-	amount, fx    float64 // fx 0 = look it up
+	line           int
+	date, account  string
+	amount, fx     float64 // fx 0 = look it up
+	kind, currency string  // optional columns: defaults for an account the import would create
 }
 
-// userErr is a 400 message for bad(): a Chinese template with {} holes plus its values.
-type userErr struct {
-	key    string
-	params []any
+// rowErrs collects row problems by message, so a column of bad dates reads "第 2、5、9 列…" in one message
+// instead of stopping at the first row.
+type rowErrs struct {
+	keys  []string
+	lines map[string][]string
 }
 
-func errf(key string, params ...any) *userErr { return &userErr{key, params} }
+func (e *rowErrs) add(key string, line int) {
+	if e.lines == nil {
+		e.lines = map[string][]string{}
+	}
+	if _, ok := e.lines[key]; !ok {
+		e.keys = append(e.keys, key)
+	}
+	e.lines[key] = append(e.lines[key], strconv.Itoa(line))
+}
 
-// parseImport reads the long layout `date,account,amount[,fx]` (the header decides column order;
-// a BOM from Excel is dropped). Amounts take the same shorthand as the record dialog (1,234 / 12.5萬 / 3k).
-func parseImport(b []byte) ([]importRow, *userErr) {
+func (e *rowErrs) list() []*userErr {
+	var out []*userErr
+	for _, k := range e.keys {
+		lines := e.lines[k]
+		if len(lines) > 10 {
+			lines = append(lines[:10:10], "…")
+		}
+		out = append(out, errf(k, lines))
+	}
+	return out
+}
+
+// parseImport reads the long layout `date,account,amount[,fx][,kind][,currency]` (the header decides column
+// order; a BOM from Excel is dropped; rows with every cell blank, which spreadsheets append, are skipped).
+// Amounts take the same shorthand as the record dialog (1,234 / 12.5萬 / 3k). A file-level problem comes back
+// alone with no rows; otherwise every bad row is reported and the good rows still come back for the preview.
+func parseImport(b []byte) ([]importRow, []*userErr) {
+	one := func(key string, params ...any) ([]importRow, []*userErr) {
+		return nil, []*userErr{errf(key, params...)}
+	}
 	b = bytes.TrimPrefix(b, []byte("\xef\xbb\xbf"))
 	if !utf8.Valid(b) {
-		return nil, errf("檔案不是 UTF-8 編碼,請在 Excel 另存成「CSV UTF-8」")
+		return one("檔案不是 UTF-8 編碼,請在 Excel 另存成「CSV UTF-8」")
 	}
 	r := csv.NewReader(bytes.NewReader(b))
 	r.FieldsPerRecord = -1
 	r.TrimLeadingSpace = true
 	head, err := r.Read()
 	if err != nil {
-		return nil, errf("CSV 是空的或格式錯誤")
+		return one("CSV 是空的或格式錯誤")
 	}
 	col := map[string]int{}
 	for i, h := range head {
-		col[strings.ToLower(strings.TrimSpace(h))] = i
+		col[strings.ToLower(strings.TrimSpace(h))] = i + 1 // 0 = no such column
 	}
-	di, dok := col["date"]
-	ai, aok := col["account"]
-	mi, mok := col["amount"]
-	if !dok || !aok || !mok {
+	if col["date"] == 0 || col["account"] == 0 || col["amount"] == 0 {
 		if len(head) == 1 && strings.Contains(head[0], ";") {
-			return nil, errf("這個檔案用分號分隔,請改成逗號分隔的 CSV")
+			return one("這個檔案用分號分隔,請改成逗號分隔的 CSV")
 		}
-		return nil, errf("第一列要是標題:date,account,amount,fx(fx 可省略)")
+		return one("第一列要是標題:date,account,amount,fx(fx 可省略)")
 	}
-	fi, fok := col["fx"]
-	field := func(rec []string, i int) string {
-		if i < len(rec) {
+	field := func(rec []string, name string) string {
+		if i := col[name] - 1; i >= 0 && i < len(rec) {
 			return strings.TrimSpace(rec[i])
 		}
 		return ""
 	}
 	var out []importRow
-	for line := 2; ; line++ {
+	var errs rowErrs
+	seen := map[[2]string]bool{}
+	for {
 		rec, err := r.Read()
 		if errors.Is(err, io.EOF) {
 			break
 		}
-		if err != nil {
-			return nil, errf("第 {} 列格式錯誤", line)
+		if pe := (*csv.ParseError)(nil); errors.As(err, &pe) {
+			return one("第 {} 列格式錯誤", pe.StartLine)
+		} else if err != nil {
+			return one("CSV 是空的或格式錯誤")
 		}
-		row := importRow{date: field(rec, di), account: unescapeCell(field(rec, ai))}
-		if !validDate(row.date) || row.account == "" {
-			return nil, errf("第 {} 列的日期(YYYY-MM-DD)或帳戶名稱不正確", line)
+		if strings.TrimSpace(strings.Join(rec, "")) == "" {
+			continue
+		}
+		line, _ := r.FieldPos(0) // the spreadsheet's row number, blank lines included
+		row := importRow{line: line, date: field(rec, "date"), account: unescapeCell(field(rec, "account")), kind: field(rec, "kind"), currency: field(rec, "currency")}
+		if !validDate(row.date) {
+			errs.add("第 {} 列的日期不正確,要是 YYYY-MM-DD", line)
+			continue
+		}
+		if row.account == "" {
+			errs.add("第 {} 列沒有帳戶名稱", line)
+			continue
+		}
+		if utf8.RuneCountInString(row.account) > maxName {
+			errs.add("第 {} 列的帳戶名稱太長,最多 60 字", line)
+			continue
 		}
 		if futureDate(row.date) {
-			return nil, errf("第 {} 列的日期在未來", line)
+			errs.add("第 {} 列的日期在未來", line)
+			continue
 		}
-		row.amount = parseAmount(field(rec, mi))
+		row.amount = parseAmount(field(rec, "amount"))
 		if math.Abs(row.amount) > maxAmount || math.IsNaN(row.amount) {
-			return nil, errf("第 {} 列的金額不是數字", line)
+			errs.add("第 {} 列的金額不是數字", line)
+			continue
 		}
-		if s := field(rec, fi); fok && s != "" {
+		if s := field(rec, "fx"); s != "" {
 			if row.fx, err = strconv.ParseFloat(s, 64); err != nil || !(row.fx > 0 && row.fx <= maxFX) {
-				return nil, errf("第 {} 列的匯率不正確", line)
+				errs.add("第 {} 列的匯率不正確", line)
+				continue
 			}
 		}
-		if out = append(out, row); len(out) > maxImportRows {
-			return nil, errf("一次最多匯入 {} 筆,請分批", maxImportRows)
+		key := [2]string{nameKey(row.account), row.date}
+		if seen[key] {
+			errs.add("第 {} 列和前面重複:同一個帳戶同一天只能有一筆", line)
+			continue
+		}
+		seen[key] = true
+		if out = append(out, row); len(out) > maxBatchRows {
+			return one("一次最多匯入 {} 筆,請分批", maxBatchRows)
 		}
 	}
-	if len(out) == 0 {
-		return nil, errf("CSV 沒有資料列")
+	if len(out) == 0 && len(errs.keys) == 0 {
+		return one("CSV 沒有資料列")
 	}
-	return out, nil
+	return out, errs.list()
 }
 
 var (
@@ -117,6 +163,7 @@ var (
 
 // parseAmount mirrors parseAmount in web/src/lib/format.ts: "1,234,567", "12.5萬", "3k", "−500", full-width digits.
 // Commas must be thousands separators, so "1.234,56" is rejected instead of read as 1.23456. NaN if not a number.
+// testdata/amounts.json holds the cases both implementations are tested against.
 func parseAmount(s string) float64 {
 	s = strings.Map(func(r rune) rune {
 		switch {
@@ -128,7 +175,7 @@ func parseAmount(s string) float64 {
 			return '.'
 		case r == '－' || r == '−' || r == '–':
 			return '-'
-		case r == ' ' || r == '\u3000' || r == '_':
+		case r == ' ' || r == '　' || r == '_':
 			return -1
 		}
 		return unicode.ToLower(r)
@@ -156,23 +203,55 @@ func parseAmount(s string) float64 {
 	return math.Round(v*1e6) / 1e6
 }
 
-// importBalances is POST /api/import. Everything is validated and every missing fx looked up
-// before the first write, so a bad file changes nothing.
-func importBalances(c *gin.Context, db *sql.DB) {
-	ctx := c.Request.Context()
-	body, err := io.ReadAll(http.MaxBytesReader(c.Writer, c.Request.Body, maxImportBytes))
+// newAccount is a name the CSV uses that no account has yet, with the file's kind and currency cells
+// (raw, possibly empty) as defaults for the account the UI offers to create.
+type newAccount struct {
+	Name     string `json:"name"`
+	Kind     string `json:"kind"`
+	Currency string `json:"currency"`
+}
+
+// previewRow is one good row as ?dry_run=1 reports it.
+type previewRow struct {
+	Line       int     `json:"line"`
+	Date       string  `json:"date"`
+	Account    string  `json:"account"`
+	Amount     float64 `json:"amount"`
+	FX         float64 `json:"fx"`         // 0 = looked up on import (or 1 for a base-currency account)
+	Currency   string  `json:"currency"`   // the account's (or the picked one for an account the import creates); "" if unknown
+	Overwrites bool    `json:"overwrites"` // replaces a balance already recorded that day
+}
+
+// fxSince is the first day the FX source has rates for (fetchFX); an earlier date can't be looked up.
+const fxSince = "2024-03-02"
+
+// nameKey is how the import matches account names: trimmed and case-folded, like nameFreeSQL's lower(),
+// so a CSV row for "schwab" lands on the account "Schwab" instead of asking to create a duplicate.
+func nameKey(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
+
+// importBalances is POST /api/import (text/csv). Names with no account are created when the query carries
+// ?accounts=[{name,kind,currency}] for them (the UI's pickers); any other unknown name is a 400.
+// Everything is validated and every missing fx looked up before the first write, so a bad file or an FX
+// outage changes nothing. With ?dry_run=1 nothing is written or fetched: the answer is
+// {rows, unknown_accounts, errors} for the UI's preview, so the preview and the import can't disagree.
+func (h *api) importBalances(c *gin.Context) {
+	ctx, db := c.Request.Context(), h.db
+	dry := c.Query("dry_run") == "1"
+	var picked []newAccount
+	if s := c.Query("accounts"); s != "" && json.Unmarshal([]byte(s), &picked) != nil {
+		bad(c, http.StatusBadRequest, "格式不正確")
+		return
+	}
+	body, err := io.ReadAll(c.Request.Body) // guardWrites caps it at maxBody
 	if err != nil {
 		bad(c, http.StatusBadRequest, "檔案讀取失敗或超過 1 MB")
 		return
 	}
-	rows, perr := parseImport(body)
-	if perr != nil {
-		bad(c, http.StatusBadRequest, perr.key, perr.params...)
-		return
-	}
+	rows, errs := parseImport(body)
+	parseErrs := len(errs)
 
 	type acct struct {
-		id  int64
+		id  int64 // 0 = created by this import
 		cur string
 	}
 	byName := map[string]acct{}
@@ -183,112 +262,196 @@ func importBalances(c *gin.Context, db *sql.DB) {
 		if err := r.Scan(&a.id, &name, &a.cur); err != nil {
 			return err
 		}
-		if _, seen := byName[name]; seen {
-			dup[name] = true
+		k := nameKey(name)
+		if _, seen := byName[k]; seen {
+			dup[k] = true // from before names had to be unique
 		}
-		byName[name] = a
+		byName[k] = a
 		return nil
 	})
 	if fail(c, err) {
 		return
 	}
-	var unknown, ambiguous []string
-	for _, r := range rows {
-		if _, ok := byName[r.account]; !ok && !slices.Contains(unknown, r.account) {
-			unknown = append(unknown, r.account)
-		}
-		if dup[r.account] && !slices.Contains(ambiguous, r.account) {
-			ambiguous = append(ambiguous, r.account)
-		}
-	}
-	if len(unknown) > 0 {
-		slices.Sort(unknown)
-		bad(c, http.StatusBadRequest, "找不到這些帳戶:{}", unknown)
-		return
-	}
-	if len(ambiguous) > 0 {
-		slices.Sort(ambiguous)
-		bad(c, http.StatusBadRequest, "有好幾個帳戶叫這些名字,請先改成不同的名字:{}", ambiguous)
-		return
-	}
-
 	set, err := settings(ctx, db)
 	if fail(c, err) {
 		return
 	}
+	kinds, err := listKinds(ctx, db)
+	if fail(c, err) {
+		return
+	}
+	known := kindMap(kinds)
+	base := set["base_currency"]
+	pick := map[string]newAccount{}
+	for _, p := range picked {
+		pick[nameKey(p.Name)] = p
+	}
+
+	type match struct {
+		importRow
+		key string
+		acct
+	}
+	var matched []match
+	unknown, create := []newAccount{}, []newAccount{}
+	var unpicked, badPick, ambiguous, baseFX, early []string
 	need := map[string]bool{}
-	var baseFX []string
 	for _, r := range rows {
-		a := byName[r.account]
-		if r.fx == 0 && a.cur != set["base_currency"] {
-			need[a.cur+" "+r.date] = true
-		}
-		// a stray fx column on base-currency rows would silently multiply them
-		if a.cur == set["base_currency"] && r.fx != 0 && r.fx != 1 && !slices.Contains(baseFX, r.account) {
-			baseFX = append(baseFX, r.account)
-		}
-	}
-	if len(baseFX) > 0 {
-		slices.Sort(baseFX)
-		bad(c, http.StatusBadRequest, "這些帳戶是基準幣別,fx 要留空或填 1:{}", baseFX)
-		return
-	}
-	if len(need) > maxFXLookups {
-		bad(c, http.StatusBadRequest, "有 {} 組幣別和日期要查匯率,一次最多 {} 組,請在 CSV 填 fx 欄", len(need), maxFXLookups)
-		return
-	}
-	rates := map[string]float64{}
-	index := map[Snapshot]int{} // keyed without amount/fx: the same account+date twice keeps the last row
-	var snaps []Snapshot
-	for _, r := range rows {
-		a := byName[r.account]
-		if r.fx == 0 {
-			r.fx = 1
-			if a.cur != set["base_currency"] {
-				k := a.cur + " " + r.date
-				if rates[k] == 0 {
-					if rates[k], err = fetchFX(ctx, a.cur, set["base_currency"], r.date); err != nil {
-						bad(c, http.StatusBadGateway, "查不到 {} 在 {} 的匯率,請在 CSV 填 fx", a.cur, r.date)
-						return
-					}
+		k := nameKey(r.account)
+		a, ok := byName[k]
+		if !ok {
+			i := slices.IndexFunc(unknown, func(u newAccount) bool { return nameKey(u.Name) == k })
+			if i < 0 {
+				unknown, i = append(unknown, newAccount{Name: r.account}), len(unknown)
+			}
+			u := &unknown[i]
+			u.Kind, u.Currency = cmp.Or(u.Kind, r.kind), cmp.Or(u.Currency, r.currency) // the first non-empty cell wins
+			p, has := pick[k]
+			switch {
+			case !has:
+				if !slices.Contains(unpicked, u.Name) {
+					unpicked = append(unpicked, u.Name)
 				}
-				r.fx = rates[k]
+				continue
+			case known[p.Kind].Key == "" || !validCurrency(p.Currency):
+				if !slices.Contains(badPick, u.Name) {
+					badPick = append(badPick, u.Name)
+				}
+				continue
+			}
+			a = acct{cur: strings.ToUpper(p.Currency)}
+			if !slices.ContainsFunc(create, func(n newAccount) bool { return nameKey(n.Name) == k }) {
+				create = append(create, newAccount{Name: u.Name, Kind: p.Kind, Currency: a.cur})
 			}
 		}
-		s := Snapshot{AccountID: a.id, Date: r.date, Amount: r.amount, FX: r.fx}
+		if dup[k] && !slices.Contains(ambiguous, r.account) {
+			ambiguous = append(ambiguous, r.account)
+		}
+		if r.fx == 0 && a.cur != base {
+			need[a.cur+" "+r.date] = true
+			if r.date < fxSince && !slices.Contains(early, r.date) {
+				early = append(early, r.date)
+			}
+		}
+		// a stray fx column on base-currency rows would silently multiply them
+		if a.cur == base && r.fx != 0 && r.fx != 1 && !slices.Contains(baseFX, r.account) {
+			baseFX = append(baseFX, r.account)
+		}
+		matched = append(matched, match{r, k, a})
+	}
+	slices.SortFunc(unknown, func(a, b newAccount) int { return strings.Compare(a.Name, b.Name) })
+	sorted := func(s []string) []string {
+		slices.Sort(s)
+		if len(s) > 10 {
+			s = append(s[:10:10], "…")
+		}
+		return s
+	}
+	if len(badPick) > 0 {
+		errs = append(errs, errf("這些新帳戶的類別或幣別不正確:{}", sorted(badPick)))
+	}
+	if len(ambiguous) > 0 {
+		errs = append(errs, errf("有好幾個帳戶叫這些名字,請先改成不同的名字:{}", sorted(ambiguous)))
+	}
+	if len(baseFX) > 0 {
+		errs = append(errs, errf("這些帳戶是基準幣別,fx 要留空或填 1:{}", sorted(baseFX)))
+	}
+	if len(early) > 0 {
+		errs = append(errs, errf("匯率資料從 {} 開始,這些日期查不到匯率,請在 CSV 填 fx:{}", fxSince, sorted(early)))
+	}
+	if len(need) > maxFXLookups {
+		errs = append(errs, errf("有 {} 組幣別和日期要查匯率,一次最多 {} 組,請在 CSV 填 fx 欄", len(need), maxFXLookups))
+	}
+
+	if dry {
+		// ponytail: loads every snapshot key to flag overwrites; fine for a household ledger's few thousand rows
+		recorded := map[Snapshot]bool{}
+		err := queryEach(ctx, db, `SELECT account_id, date FROM snapshots`, func(r *sql.Rows) error {
+			var s Snapshot
+			err := r.Scan(&s.AccountID, &s.Date)
+			recorded[s] = true
+			return err
+		})
+		if fail(c, err) {
+			return
+		}
+		at := map[int]acct{}
+		for _, m := range matched {
+			at[m.line] = m.acct
+		}
+		preview, msgs := []previewRow{}, []gin.H{}
+		for _, r := range rows {
+			p := previewRow{Line: r.line, Date: r.date, Account: r.account, Amount: r.amount, FX: r.fx}
+			if a, ok := at[r.line]; ok {
+				p.Currency, p.Overwrites = a.cur, a.id != 0 && recorded[Snapshot{AccountID: a.id, Date: r.date}]
+			}
+			preview = append(preview, p)
+		}
+		for _, e := range errs {
+			msgs = append(msgs, e.body())
+		}
+		c.JSON(http.StatusOK, gin.H{"rows": preview, "unknown_accounts": unknown, "errors": msgs, "fx_lookups": len(need)})
+		return
+	}
+
+	if parseErrs == 0 && len(unpicked) > 0 {
+		bad(c, http.StatusBadRequest, "找不到這些帳戶:{}", sorted(unpicked))
+		return
+	}
+	if len(errs) > 0 {
+		bad(c, http.StatusBadRequest, errs[0].key, errs[0].params...)
+		return
+	}
+
+	// Every rate first: an FX outage must fail the import before any account or balance is written.
+	rates := map[string]float64{}
+	for i := range matched {
+		m := &matched[i]
+		if m.fx != 0 {
+			continue
+		}
+		m.fx = 1
+		if m.cur != base {
+			k := m.cur + " " + m.date
+			if rates[k] == 0 {
+				if rates[k], err = fetchFX(ctx, m.cur, base, m.date); err != nil {
+					bad(c, http.StatusBadGateway, "查不到 {} 在 {} 的匯率,請在 CSV 填 fx", m.cur, m.date)
+					return
+				}
+			}
+			m.fx = rates[k]
+		}
+	}
+	// ponytail: no transactions on D1, so a name taken between the checks and here (another tab) stops the
+	// import with the accounts made so far kept; running it again reuses them.
+	created := map[string]int64{}
+	for _, n := range create {
+		a := Account{Name: n.Name, Kind: n.Kind, Currency: n.Currency}
+		ok, err := insertAccount(ctx, db, &a)
+		if fail(c, err) {
+			return
+		}
+		if !ok {
+			h.rejectAccount(c, &a.Kind, &a.Name, 0)
+			return
+		}
+		created[nameKey(n.Name)] = a.ID
+	}
+	snaps := make([]Snapshot, 0, len(matched))
+	for _, m := range matched {
+		id := m.id
+		if id == 0 {
+			id = created[m.key]
+		}
+		s := Snapshot{AccountID: id, Date: m.date, Amount: m.amount, FX: m.fx}
 		if !validSnapshot(s) {
 			bad(c, http.StatusBadRequest, "日期、金額或匯率不正確")
 			return
 		}
-		key := Snapshot{AccountID: a.id, Date: r.date}
-		if i, ok := index[key]; ok {
-			snaps[i] = s
-			continue
-		}
-		index[key] = len(snaps)
 		snaps = append(snaps, s)
 	}
 	if fail(c, upsertSnapshots(ctx, db, snaps)) {
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"imported": len(snaps)})
-}
-
-// upsertSnapshots writes rows in multi-row statements of 20 (4 params each; D1 caps a statement at 100).
-// No transaction on D1, but an upsert is idempotent, so retrying after a partial failure is safe.
-func upsertSnapshots(ctx context.Context, db *sql.DB, in []Snapshot) error {
-	for i := 0; i < len(in); i += 20 {
-		chunk := in[i:min(i+20, len(in))]
-		args := make([]any, 0, len(chunk)*4)
-		for _, s := range chunk {
-			args = append(args, s.AccountID, s.Date, s.Amount, s.FX)
-		}
-		q := `INSERT INTO snapshots (account_id, date, amount, fx) VALUES ` +
-			strings.TrimSuffix(strings.Repeat("(?, ?, ?, ?),", len(chunk)), ",") +
-			` ON CONFLICT(account_id, date) DO UPDATE SET amount=excluded.amount, fx=excluded.fx`
-		if _, err := db.ExecContext(ctx, q, args...); err != nil {
-			return err
-		}
-	}
-	return nil
+	c.JSON(http.StatusOK, gin.H{"imported": len(snaps), "created": len(create)})
 }

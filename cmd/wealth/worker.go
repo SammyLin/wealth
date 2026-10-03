@@ -6,7 +6,6 @@ package main
 
 import (
 	"database/sql"
-	"net/http"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -28,25 +27,12 @@ func main() {
 	workers.Serve(ledger.New(db, false, accessFromEnv()))
 }
 
-// accessFromEnv fails closed: without ACCESS_TEAM_DOMAIN + ACCESS_AUD the Worker refuses to serve,
-// unless ALLOW_PUBLIC=1 says the open URL is intended. Env vars are only readable during a request.
+// accessFromEnv builds ledger.AccessFromEnv's guard on the first request: env vars are only readable during one.
 func accessFromEnv() gin.HandlerFunc {
 	var once sync.Once
 	var guard gin.HandlerFunc
 	return func(c *gin.Context) {
-		once.Do(func() {
-			team, aud := cloudflare.Getenv("ACCESS_TEAM_DOMAIN"), cloudflare.Getenv("ACCESS_AUD")
-			switch {
-			case team != "" && aud != "":
-				guard = ledger.AccessGuard(team, aud, ledger.FXClient)
-			case cloudflare.Getenv("ALLOW_PUBLIC") == "1":
-				guard = func(c *gin.Context) { c.Next() }
-			default:
-				guard = func(c *gin.Context) {
-					c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "Set ACCESS_TEAM_DOMAIN and ACCESS_AUD (Cloudflare Access), or ALLOW_PUBLIC=1."})
-				}
-			}
-		})
+		once.Do(func() { guard = ledger.AccessFromEnv(cloudflare.Getenv, ledger.FXClient) })
 		guard(c)
 	}
 }

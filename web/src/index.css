@@ -34,6 +34,8 @@ body {
     min-height: 2.75rem;
   }
   .mantine-ActionIcon-root { min-width: 2.75rem; }
+  /* a switch is a 22px track; the label box around it takes the 44px instead */
+  .mantine-Switch-body { min-height: 2.75rem; align-items: center; }
   .mantine-CloseButton-root { min-width: 2.75rem; min-height: 2.75rem; }
   /* 16px text also stops iOS from zooming the page when an input gets focus */
   .mantine-Input-input { min-height: 2.75rem; font-size: 1rem; }

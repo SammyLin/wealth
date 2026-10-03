@@ -1,11 +1,11 @@
 import { useState } from "react"
-import { Alert, Button, EmptyState, Grid, Group, SimpleGrid, Skeleton, Stack, Text } from "@mantine/core"
-import { modals } from "@mantine/modals"
+import { Alert, Button, EmptyState, Grid, Group, SimpleGrid, Stack, Text } from "@mantine/core"
 import { notifications } from "@mantine/notifications"
-import { Info, Landmark, Plus, Trash2, TriangleAlert } from "lucide-react"
+import { Info, Landmark, Plus, TriangleAlert } from "lucide-react"
 import type { LoanView } from "../../api/types"
-import { useLedger, useMoney } from "../../api/useLedger"
+import { useLedgerState, useMoney } from "../../api/useLedger"
 import { T, t } from "../../i18n"
+import { askConfirm } from "../../shell/confirm"
 import { SectionCard } from "../../shell/SectionCard"
 import { LoanCard } from "./LoanCard"
 import { LoanModal } from "./LoanModal"
@@ -14,7 +14,7 @@ import { PaymentChart } from "./PaymentChart"
 import { ThisMonth } from "./ThisMonth"
 
 export function Loans() {
-  const { state, deleteLoan } = useLedger()
+  const { state, deleteLoan } = useLedgerState()
   const money = useMoney()
   // undefined = closed, null = new loan, LoanView = editing
   const [editing, setEditing] = useState<LoanView | null | undefined>(undefined)
@@ -26,28 +26,10 @@ export function Loans() {
     </Button>
   )
   const card = (children: React.ReactNode) => (
-    <SectionCard title={t("貸款")} description={t("每個月要繳多少、寬限期什麼時候結束、月付什麼時候會跳。")} actions={state?.loans.length ? add : undefined}>
+    <SectionCard title={t("貸款")} description={t("每個月要繳多少、寬限期什麼時候結束、月付什麼時候會跳。")} actions={state.loans.length ? add : undefined}>
       {children}
     </SectionCard>
   )
-
-  if (!state)
-    return card(
-      <Stack gap="md" aria-busy="true" aria-label={t("載入中…")}>
-        <Grid>
-          <Grid.Col span={{ base: 12, md: 5 }}>
-            <Skeleton h={240} />
-          </Grid.Col>
-          <Grid.Col span={{ base: 12, md: 7 }}>
-            <Skeleton h={240} />
-          </Grid.Col>
-        </Grid>
-        <SimpleGrid cols={{ base: 1, sm: 2 }}>
-          <Skeleton h={200} />
-          <Skeleton h={200} />
-        </SimpleGrid>
-      </Stack>,
-    )
 
   const { loans, loan_schedule: schedule, accounts } = state
   const accountName = (id: number | null) => accounts.find((a) => a.id === id)?.name
@@ -87,11 +69,11 @@ export function Loans() {
   })
 
   const remove = (l: LoanView) =>
-    modals.openConfirmModal({
+    askConfirm({
       title: T`刪除貸款「${l.name}」?`,
-      children: <Text fz="sm">{t("只會刪掉這筆貸款的設定(月付計算),帳上的負債餘額不受影響。")}</Text>,
-      labels: { confirm: t("刪除"), cancel: t("取消") },
-      confirmProps: { color: "red", leftSection: <Trash2 size={16} /> },
+      body: t("只會刪掉這筆貸款的設定(月付計算),帳上的負債餘額不受影響。"),
+      confirm: t("刪除"),
+      danger: true,
       onConfirm: () =>
         deleteLoan(l.id).then(
           () => notifications.show({ message: T`已刪除「${l.name}」` }),
@@ -102,7 +84,7 @@ export function Loans() {
   return card(
     <Stack gap="lg">
       {gaps.map(({ a, owed, reg }) => (
-        <Alert key={a.id} variant="light" color="yellow" icon={<TriangleAlert size={18} />}>
+        <Alert key={a.id} variant="light" color="warn" icon={<TriangleAlert size={18} />}>
           {T`「${a.name}」帳上負債 ${money(owed)},已登記的貸款剩餘本金只有 ${money(reg)},還差 ${money(owed - reg)} 沒登記。補上那一段貸款,月付才會完整。`}
         </Alert>
       ))}

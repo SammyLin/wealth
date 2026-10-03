@@ -36,6 +36,8 @@ func validKindFields(k Kind) string {
 		return "顏色格式要是 #rrggbb"
 	case !validLiquidity(k.Liquidity):
 		return "流動性要是 liquid、invest、fixed 或 liability"
+	case k.Sort < -maxSort || k.Sort > maxSort:
+		return "排序值超出範圍"
 	}
 	return ""
 }
@@ -125,12 +127,19 @@ func validDate(s string) bool {
 	return err == nil && t.Year() >= 1900 && t.Year() < 2200
 }
 
+// outOfRange: a real YYYY-MM-DD outside validDate's years, so the message can say "range" rather than "format".
+func outOfRange(s string) bool {
+	_, err := time.Parse("2006-01-02", s)
+	return err == nil && !validDate(s)
+}
+
 // futureDate: a balance can't be recorded for a day that hasn't happened. One day of slack covers the
 // user's time zone being ahead of the server's.
 func futureDate(s string) bool { return s > time.Now().AddDate(0, 0, 1).Format("2006-01-02") }
 
+// validCurrency: three ASCII letters, checked on the raw bytes (upper-casing first let "ıd" through as "ID").
 func validCurrency(s string) bool {
-	return len(s) == 3 && strings.Trim(strings.ToUpper(s), "ABCDEFGHIJKLMNOPQRSTUVWXYZ") == ""
+	return len(s) == 3 && strings.Trim(s, "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz") == ""
 }
 
 func validLoan(l Loan) string {
@@ -145,6 +154,8 @@ func validLoan(l Loan) string {
 		return "年利率要在 0–20% 之間"
 	case l.TotalMonths <= 0 || l.TotalMonths > 600 || l.GraceMonths < 0 || l.GraceMonths >= l.TotalMonths:
 		return "總期數 1–600 個月,寬限期要小於總期數"
+	case outOfRange(l.Start):
+		return "日期要在 1900–2199 年之間"
 	case !validDate(l.Start):
 		return "起始日期格式錯誤"
 	}

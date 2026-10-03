@@ -35,22 +35,31 @@ func DownloadBackup(db *sql.DB) gin.HandlerFunc {
 // AutoBackup writes a consistent copy (VACUUM INTO, safe with WAL) once a day and keeps the newest `keep`.
 func AutoBackup(db *sql.DB, dir string, keep int) {
 	for {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
+		if err := backupOnce(db, dir, keep, time.Now()); err != nil {
 			log.Println("backup:", err)
-		} else {
-			path := filepath.Join(dir, "wealth-"+time.Now().Format("2006-01-02")+".db")
-			if _, err := os.Stat(path); os.IsNotExist(err) {
-				if _, err := db.Exec(`VACUUM INTO ?`, path); err != nil {
-					log.Println("backup:", err)
-				}
-			}
-			old, _ := filepath.Glob(filepath.Join(dir, "wealth-*.db"))
-			sort.Strings(old) // date-named, so lexical order is chronological
-			for len(old) > keep {
-				os.Remove(old[0])
-				old = old[1:]
-			}
 		}
 		time.Sleep(6 * time.Hour) // checks 4×/day, writes at most one file per date
 	}
+}
+
+// backupOnce writes now's dated copy unless it exists, then deletes all but the newest `keep`.
+func backupOnce(db *sql.DB, dir string, keep int, now time.Time) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	path := filepath.Join(dir, "wealth-"+now.Format("2006-01-02")+".db")
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		if _, err := db.Exec(`VACUUM INTO ?`, path); err != nil {
+			return err
+		}
+	}
+	old, _ := filepath.Glob(filepath.Join(dir, "wealth-*.db"))
+	sort.Strings(old) // date-named, so lexical order is chronological
+	for len(old) > keep {
+		if err := os.Remove(old[0]); err != nil {
+			return err
+		}
+		old = old[1:]
+	}
+	return nil
 }

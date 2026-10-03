@@ -5,14 +5,13 @@ import { useMoney } from "../../api/useLedger"
 import { T, t } from "../../i18n"
 import { fmtDate, fmtPct } from "../../lib/format"
 
-/** The latest record's mix of the given kinds, with a text legend (name, share, amount). */
+/** The latest record's mix of the given kinds, with a text legend (name, share, amount) in class order, like the stack beside it. */
 export function MixDonut({ row, kinds }: { row: Row; kinds: Kind[] }) {
   const money = useMoney()
   // A donut can't show zero or negative slices; those kinds simply have no share today.
   const data = kinds
     .map((k) => ({ key: k.key, name: t(k.name), value: row.by_kind[k.key] ?? 0, color: k.color }))
     .filter((d) => d.value > 0)
-    .sort((a, b) => b.value - a.value)
   const total = data.reduce((s, d) => s + d.value, 0)
 
   if (!data.length)

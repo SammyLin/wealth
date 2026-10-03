@@ -10,7 +10,9 @@ import { useLedgerState, useMoney } from "../../api/useLedger"
 import { T, t, useLang } from "../../i18n"
 import { fmtDate, fmtInput, fmtMoney, parseAmount, todayISO } from "../../lib/format"
 import { fmtTerm } from "./labels"
-import { addMonths, gracePayment, levelPayment, pctToRate, rateToPct, totalInterest } from "./math"
+import { addMonths, gracePayment, levelPayment, loanErrors, pctToRate, rateToPct, totalInterest } from "./math"
+import { Stat } from "../../shell/Stat"
+import { useDirty, useGuardedClose } from "../../shell/dirty"
 
 type Values = {
   name: string
@@ -42,19 +44,8 @@ const toLoan = (v: Values): LoanInput => ({
   total_months: v.total_months === "" ? NaN : Number(v.total_months),
 })
 
-// Same rules and messages as validLoan() in internal/ledger/model.go, attached to the field at fault.
-const TERM = "總期數 1–600 個月,寬限期要小於總期數"
-function validate(v: Values) {
-  const l = toLoan(v)
-  const e: Partial<Record<keyof Values, string>> = {}
-  if (!l.name) e.name = t("名稱和本金必填")
-  if (!(l.principal > 0)) e.principal = t("名稱和本金必填")
-  if (!(l.rate >= 0 && l.rate <= 0.2)) e.rate = t("年利率要在 0–20% 之間")
-  if (!Number.isInteger(l.total_months) || l.total_months <= 0 || l.total_months > 600) e.total_months = t(TERM)
-  if (!Number.isInteger(l.grace_months) || l.grace_months < 0 || !(l.grace_months < l.total_months)) e.grace_months = t(TERM)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(l.start)) e.start = t("起始日期格式錯誤")
-  return e
-}
+// validLoan()'s rules and messages (shared cases in testdata/loans.json), attached to the field at fault.
+const validate = (v: Values) => Object.fromEntries(Object.entries(loanErrors(toLoan(v))).map(([k, msg]) => [k, t(msg)]))
 
 type Props = { opened: boolean; onClose: () => void; loan?: LoanView | null }
 
@@ -65,6 +56,9 @@ export function LoanModal({ opened, onClose, loan }: Props) {
   const fullScreen = useMediaQuery("(max-width: 48em)")
   const [saving, setSaving] = useState(false)
   const form = useForm<Values>({ initialValues: initial(loan), validate })
+  // Esc, X, the backdrop and Cancel ask before dropping typed loan terms, like the other dialogs
+  const { dirty, close } = useGuardedClose(onClose)
+  useDirty(opened && form.isDirty(), dirty)
 
   useEffect(() => {
     if (!opened) return
@@ -97,7 +91,7 @@ export function LoanModal({ opened, onClose, loan }: Props) {
   const months = Number.isInteger(l.total_months) && l.total_months > 0 ? l.total_months : 0
 
   return (
-    <Modal opened={opened} onClose={onClose} title={t(loan ? "編輯貸款" : "新增貸款")} size="lg" fullScreen={fullScreen}>
+    <Modal opened={opened} onClose={close} title={t(loan ? "編輯貸款" : "新增貸款")} size="lg" fullScreen={fullScreen}>
       <form onSubmit={form.onSubmit(submit)} noValidate>
         <Stack gap="md">
           <Text fz="sm" c="dimmed">
@@ -130,7 +124,7 @@ export function LoanModal({ opened, onClose, loan }: Props) {
           </SimpleGrid>
           <DatePickerInput
             label={t("起始日(撥款日)")}
-              leftSection={<CalendarDays size={16} aria-hidden />}
+            leftSection={<CalendarDays size={16} aria-hidden />}
             withAsterisk
             description={t("第一期在撥款的下個月繳")}
             {...form.getInputProps("start")}
@@ -158,7 +152,7 @@ export function LoanModal({ opened, onClose, loan }: Props) {
           <Preview loan={l} money={money} exact={(v) => fmtMoney(v, "full", lang)} />
 
           <Group justify="flex-end" gap="sm">
-            <Button variant="default" onClick={onClose}>
+            <Button variant="default" onClick={close}>
               {t("取消")}
             </Button>
             <Button type="submit" loading={saving}>
@@ -180,10 +174,10 @@ function Preview({ loan: l, money, exact }: { loan: LoanInput; money: Fmt; exact
     <Paper p="md" radius="md" bg="var(--wealth-paper-2)" aria-live="polite">
       {ok ? (
         <SimpleGrid cols={{ base: 2, xs: l.grace_months > 0 ? 4 : 3 }} spacing="sm">
-          {l.grace_months > 0 && <Figure label={t("寬限期月付")} value={exact(gracePayment(l))} />}
-          <Figure label={l.grace_months > 0 ? t("之後月付") : t("月付")} value={exact(levelPayment(l))} />
-          <Figure label={t("總利息")} value={money(totalInterest(l))} />
-          {/^\d{4}-\d{2}-\d{2}$/.test(l.start) && <Figure label={t("繳清日")} value={fmtDate(addMonths(l.start, l.total_months))} />}
+          {l.grace_months > 0 && <Stat label={t("寬限期月付")} value={exact(gracePayment(l))} />}
+          <Stat label={l.grace_months > 0 ? t("之後月付") : t("月付")} value={exact(levelPayment(l))} />
+          <Stat label={t("總利息")} value={money(totalInterest(l))} />
+          {/^\d{4}-\d{2}-\d{2}$/.test(l.start) && <Stat label={t("繳清日")} value={fmtDate(addMonths(l.start, l.total_months))} />}
         </SimpleGrid>
       ) : (
         <Text fz="sm" c="dimmed">
@@ -191,18 +185,5 @@ function Preview({ loan: l, money, exact }: { loan: LoanInput; money: Fmt; exact
         </Text>
       )}
     </Paper>
-  )
-}
-
-function Figure({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <Text fz="xs" c="dimmed">
-        {label}
-      </Text>
-      <Text className="num" fz="lg" lh={1.3}>
-        {value}
-      </Text>
-    </div>
   )
 }

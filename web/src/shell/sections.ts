@@ -21,7 +21,7 @@ export const SECTIONS: { id: SectionId; label: string; component: ComponentType 
 type Entry = Layout["sections"][number]
 
 /** settings.layout (JSON, may be empty or stale) → every known section exactly once, saved order first. */
-export function resolveLayout(json: string | undefined): Entry[] {
+function resolveLayout(json: string | undefined): Entry[] {
   let saved: unknown
   try {
     saved = JSON.parse(json || "{}").sections

@@ -1,70 +1,100 @@
-import { useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { Alert, Anchor, Badge, Button, EmptyState, FileInput, Group, Skeleton, Stack, Table, Text } from "@mantine/core"
-import { modals } from "@mantine/modals"
 import { notifications } from "@mantine/notifications"
-import { CircleAlert, CircleCheck, FileSpreadsheet, FileUp, Upload } from "lucide-react"
-import { useLedgerState, useMoney } from "../../api/useLedger"
-import type { Account } from "../../api/types"
-import { T, t, tKey } from "../../i18n"
-import { fmtDate, todayISO } from "../../lib/format"
-import { csvField, parseImport } from "./csv"
+import { CircleAlert, CircleCheck, FileSpreadsheet, FileUp, Upload, UserPlus } from "lucide-react"
+import { apiMessage, previewImport } from "../../api/client"
+import { useLedgerState } from "../../api/useLedger"
+import type { ImportPreview, Kind, NewAccount, UnknownAccount } from "../../api/types"
+import { enOf, T, t, useLang } from "../../i18n"
+import { CURRENCY_RE, fmtDate, fmtFx, fmtMoney, todayISO } from "../../lib/format"
+import { SEEDED } from "../../lib/kinds"
+import { askConfirm } from "../../shell/confirm"
+import { CurrencyInput, KindSelect } from "../accounts/inputs"
 
 const MAX_BYTES = 1 << 20 // server limit
 const PREVIEW_ROWS = 5
-const list = (xs: (string | number)[], max = 5) => xs.slice(0, max).join(t("、")) + (xs.length > max ? "…" : "")
+const csvField = (s: string) => (/[",\r\n]/.test(s) ? `"${s.replaceAll('"', '""')}"` : s)
 
-type Picked = { file: File; text: string | null; error?: string }
+type Pick = { kind: string; currency: string; guessed?: boolean } // guessed: the CSV named a class that doesn't exist
 
+/**
+ * Defaults for an account the import creates: the CSV's kind cell matched by key, by name in either language,
+ * or by a seeded class's original name (台股 / TW stocks still means tw_stock after FirstRun renamed it), else
+ * the first asset class, flagged as a guess when the cell wasn't empty; its currency cell, else the base.
+ */
+function defaultPick(u: UnknownAccount, kinds: Kind[], base: string): Pick {
+  const cell = u.kind.trim().toLowerCase()
+  const names = (k: Kind) => [k.key, k.name, t(k.name), enOf(k.name), ...(SEEDED[k.key] ? [SEEDED[k.key], enOf(SEEDED[k.key])] : [])]
+  const named = cell ? kinds.find((k) => names(k).some((n) => n.toLowerCase() === cell)) : undefined
+  const kind = named ?? kinds.find((k) => k.liquidity !== "liability") ?? kinds[0]
+  const cur = u.currency.trim().toUpperCase()
+  return { kind: kind?.key ?? "", currency: CURRENCY_RE.test(cur) ? cur : base, guessed: !!cell && !named }
+}
+
+type Checked = { file: File; result?: ImportPreview; error?: string }
+
+/**
+ * Import balances from CSV. The server checks the file without writing (POST /api/import?dry_run=1), so the
+ * preview says exactly what Import will do; names with no account yet get a class and currency picker and are
+ * created on Import.
+ */
 export function CsvImport() {
   const { state, importCSV } = useLedgerState()
-  const money = useMoney()
-  const [picked, setPicked] = useState<Picked | null>(null)
+  const { lang } = useLang()
+  const [file, setFile] = useState<File | null>(null)
+  const [checked, setChecked] = useState<Checked | null>(null)
+  const [picks, setPicks] = useState<Record<string, Pick>>({})
+  const [all, setAll] = useState(false)
   const [busy, setBusy] = useState(false)
   const [imported, setImported] = useState<number | null>(null)
-
-  // Same rules as the server: names match exactly, and a name two accounts share is refused (ambiguous).
-  const { byName, shared } = useMemo(() => {
-    const m = new Map<string, Account>()
-    const dup = new Set<string>()
-    for (const a of state.accounts) {
-      if (m.has(a.name)) dup.add(a.name)
-      else m.set(a.name, a)
-    }
-    return { byName: m, shared: dup }
-  }, [state.accounts])
   const base = state.settings.base_currency
+  const tooBig = !!file && file.size > MAX_BYTES
 
-  const parsed = useMemo(() => (picked?.text == null ? null : parseImport(picked.text)), [picked])
-  const rows = parsed?.rows ?? []
-  const unknown = [...new Set(rows.map((r) => r.account).filter((n) => n && !byName.has(n)))]
-  const ambiguous = [...new Set(rows.map((r) => r.account).filter((n) => shared.has(n)))]
-  const bad = rows.filter((r) => !r.ok).map((r) => r.line)
-  const future = rows.filter((r) => r.future).map((r) => r.line)
-  const baseFx = [...new Set(rows.filter((r) => r.fx !== null && r.fx !== 1 && byName.get(r.account)?.currency === base).map((r) => r.account))]
-  const overwrites = rows.filter((r) => byName.get(r.account)?.history.some((p) => p.date === r.date)).length
-  const ready = !!parsed && !parsed.error && !unknown.length && !ambiguous.length && !bad.length && !future.length && !baseFx.length
+  const current = checked?.file === file ? checked : null
+  const r = current?.result
+  const rows = r?.rows ?? []
+  const unknown = r?.unknown_accounts ?? []
+  const errors = r?.errors ?? []
+  const pickOf = (u: UnknownAccount) => picks[u.name] ?? defaultPick(u, state.kinds, base)
+  // The accounts Import would create; the preview is checked with them too (a picked base currency vs a stray
+  // fx column, rates to look up), so "ready" means the import will go through.
+  const create: NewAccount[] = unknown.map((u) => ({ name: u.name, kind: pickOf(u).kind, currency: pickOf(u).currency }))
+  const createKey = JSON.stringify(create.filter((a) => a.kind && CURRENCY_RE.test(a.currency)))
 
-  const pick = (file: File | null) => {
-    setImported(null)
-    if (!file) return setPicked(null)
-    if (file.size > MAX_BYTES) return setPicked({ file, text: null, error: t("檔案讀取失敗或超過 1 MB") })
-    setPicked({ file, text: null })
-    file.text().then(
-      (text) => setPicked((p) => (p?.file === file ? { file, text } : p)),
-      () => setPicked((p) => (p?.file === file ? { file, text: null, error: t("檔案讀取失敗或超過 1 MB") } : p)),
+  // Runs again when the accounts or the picks change; the first answer lists the new names, the second checks the picks.
+  useEffect(() => {
+    if (!file || file.size > MAX_BYTES) return
+    let live = true
+    previewImport(file, JSON.parse(createKey)).then(
+      (result) => live && setChecked({ file, result }),
+      (e: Error) => live && setChecked({ file, error: e.message }),
     )
+    return () => {
+      live = false
+    }
+  }, [file, state.accounts, createKey])
+
+  const overwrites = rows.filter((x) => x.overwrites).length
+  const ready = !!r && !errors.length && rows.length > 0 && create.every((a) => !!a.kind && CURRENCY_RE.test(a.currency))
+  const full = (v: number) => fmtMoney(v, "full", lang) // every digit, so the preview confirms what was parsed
+
+  const pick = (f: File | null) => {
+    setImported(null)
+    setPicks({})
+    setAll(false)
+    setFile(f)
   }
 
   const run = async () => {
-    if (!picked?.text) return
+    if (!file) return
     setBusy(true)
     try {
-      const r = await importCSV(picked.text)
-      setImported(r.imported)
-      setPicked(null)
-      notifications.show({ color: "green", message: T`已匯入 ${r.imported} 筆餘額` })
+      const res = await importCSV(file, create)
+      setImported(res.imported)
+      setFile(null)
+      notifications.show({ color: "up", icon: <CircleCheck size={16} />, message: T`已匯入 ${res.imported} 筆餘額` })
     } catch {
-      /* useLedger already showed the server's message; keep the file so it can be fixed and retried */
+      /* useLedger already showed the server's message; the preview reruns, so it shows what is left to fix */
     } finally {
       setBusy(false)
     }
@@ -72,17 +102,17 @@ export function CsvImport() {
 
   const submit = () =>
     overwrites
-      ? modals.openConfirmModal({
+      ? askConfirm({
           title: t("覆蓋既有餘額?"),
-          children: <Text fz="sm">{T`有 ${overwrites} 筆的帳戶在同一天已經有餘額,匯入後會被 CSV 的數字取代。`}</Text>,
-          labels: { confirm: t("匯入並覆蓋"), cancel: t("取消") },
-          confirmProps: { color: "red" },
+          body: T`有 ${overwrites} 筆的帳戶在同一天已經有餘額,匯入後會被 CSV 的數字取代。`,
+          confirm: t("匯入並覆蓋"),
+          danger: true,
           onConfirm: () => void run(),
         })
       : void run()
 
   const sample = state.accounts.find((a) => !a.archived)?.name ?? t("帳戶名稱")
-  const template = "data:text/csv;charset=utf-8," + encodeURIComponent(`\uFEFFdate,account,amount,fx\n${todayISO()},${csvField(sample)},100000,\n`)
+  const template = "data:text/csv;charset=utf-8," + encodeURIComponent(`﻿date,account,amount,fx,kind,currency\n${todayISO()},${csvField(sample)},100000,,,\n`)
 
   return (
     <Stack gap="sm">
@@ -90,7 +120,7 @@ export function CsvImport() {
         label={t("匯入餘額 CSV")}
         description={
           <>
-            {t("欄位:date,account,amount,fx(fx 可省略,會自動查當天匯率)。帳戶名稱要完全相同。")}{" "}
+            {t("欄位:date,account,amount,fx(fx 可省略,會自動查當天匯率)。還沒有的帳戶會在匯入時建立,可以多加 kind、currency 兩欄當它們的預設類別和幣別。")}{" "}
             <Anchor href={template} download="wealth-import.csv" fz="inherit">
               {t("下載範本")}
             </Anchor>
@@ -100,37 +130,48 @@ export function CsvImport() {
         accept=".csv,text/csv"
         clearable
         clearButtonProps={{ "aria-label": t("清除") }}
-        value={picked?.file ?? null}
+        value={file}
         onChange={pick}
         leftSection={<FileUp size={16} aria-hidden />}
       />
 
       {imported != null && (
-        <Alert color="green" icon={<CircleCheck size={18} />} withCloseButton onClose={() => setImported(null)} closeButtonLabel={t("關閉")}>
+        <Alert color="up" icon={<CircleCheck size={18} />} withCloseButton onClose={() => setImported(null)} closeButtonLabel={t("關閉")}>
           {T`已匯入 ${imported} 筆餘額`}
         </Alert>
       )}
 
-      {!picked && imported == null && (
+      {!file && imported == null && (
         <EmptyState size="sm" variant="light" icon={<FileSpreadsheet size={20} />} description={t("選好檔案後會先預覽,確認沒問題再匯入。")} />
       )}
 
-      {picked && !picked.error && !parsed && <Skeleton h={140} radius="md" />}
+      {file && !tooBig && !current && <Skeleton h={140} radius="md" />}
 
-      {(picked?.error || parsed?.error) && (
-        <Alert color="red" icon={<CircleAlert size={18} />}>
-          {picked?.error ?? tKey(parsed!.error!, parsed!.params ?? [])}
+      {(tooBig || current?.error) && (
+        <Alert color="down" icon={<CircleAlert size={18} />}>
+          {tooBig ? t("檔案讀取失敗或超過 1 MB") : current?.error}
         </Alert>
       )}
 
-      {parsed && !parsed.error && (
+      {errors.map((e) => (
+        <Alert key={e.error} color="down" icon={<CircleAlert size={18} />}>
+          {apiMessage(e)}
+        </Alert>
+      ))}
+
+      {rows.length > 0 && (
         <>
           <Group gap="xs">
             <Badge variant="light">{T`共 ${rows.length} 筆`}</Badge>
             {overwrites > 0 && (
-              <Badge variant="light" color="orange">
+              <Badge variant="light" color="warn">
                 {T`覆蓋 ${overwrites} 筆`}
               </Badge>
+            )}
+            {r!.fx_lookups > 0 && (
+              <Text fz="xs" c="dimmed">
+                {T`匯入時會查 ${r!.fx_lookups} 組匯率`}
+              </Text>
             )}
           </Group>
           <Table.ScrollContainer minWidth={340}>
@@ -144,17 +185,24 @@ export function CsvImport() {
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {rows.slice(0, PREVIEW_ROWS).map((r) => {
-                  const a = byName.get(r.account)
+                {(all ? rows : rows.slice(0, PREVIEW_ROWS)).map((x) => {
+                  const cur = x.currency
                   return (
-                    <Table.Tr key={r.line} c={r.ok && !r.future && a ? undefined : "var(--wealth-down)"}>
-                      <Table.Td className="num">{fmtDate(r.date) || "—"}</Table.Td>
-                      <Table.Td>{r.account || "—"}</Table.Td>
-                      <Table.Td ta="right" className="num">
-                        {Number.isFinite(r.amount) ? money(r.amount) : "—"} {a && <Text span c="dimmed" fz="xs">{a.currency}</Text>}
+                    <Table.Tr key={x.line}>
+                      <Table.Td className="num">{fmtDate(x.date)}</Table.Td>
+                      <Table.Td>
+                        {x.account}
+                        {x.overwrites && (
+                          <Badge ml={6} size="xs" variant="light" color="warn">
+                            {t("覆蓋")}
+                          </Badge>
+                        )}
+                      </Table.Td>
+                      <Table.Td ta="right" className="num" style={{ whiteSpace: "nowrap" }}>
+                        {full(x.amount)} <Text span c="dimmed" fz="xs">{cur}</Text>
                       </Table.Td>
                       <Table.Td ta="right" className="num">
-                        {r.fx ?? (a && a.currency !== base ? t("自動") : "1")}
+                        {x.fx ? fmtFx(x.fx) : cur === base ? "1" : t("自動")}
                       </Table.Td>
                     </Table.Tr>
                   )
@@ -163,44 +211,67 @@ export function CsvImport() {
             </Table>
           </Table.ScrollContainer>
           {rows.length > PREVIEW_ROWS && (
-            <Text c="dimmed" fz="xs">
-              {T`只顯示前 ${PREVIEW_ROWS} 筆。`}
-            </Text>
-          )}
-          {unknown.length > 0 && (
-            <Alert color="orange" icon={<CircleAlert size={18} />} title={t("找不到這些帳戶")}>
-              <Text fz="sm">{list(unknown, 10)}</Text>
-              <Text fz="xs" c="dimmed" mt={4}>
-                {t("先在「帳戶與類別」新增,或把 CSV 裡的名稱改成跟現有帳戶一樣。")}
-              </Text>
-            </Alert>
-          )}
-          {ambiguous.length > 0 && (
-            <Alert color="red" icon={<CircleAlert size={18} />}>
-              {tKey("有好幾個帳戶叫這些名字,請先改成不同的名字:{}", [ambiguous])}
-            </Alert>
-          )}
-          {future.length > 0 && (
-            <Alert color="red" icon={<CircleAlert size={18} />}>
-              {tKey("第 {} 列的日期在未來", [list(future)])}
-            </Alert>
-          )}
-          {baseFx.length > 0 && (
-            <Alert color="red" icon={<CircleAlert size={18} />}>
-              {tKey("這些帳戶是基準幣別,fx 要留空或填 1:{}", [baseFx])}
-            </Alert>
-          )}
-          {bad.length > 0 && (
-            <Alert color="red" icon={<CircleAlert size={18} />}>
-              {T`第 ${list(bad)} 列的日期(YYYY-MM-DD)、金額或匯率不正確。`}
-            </Alert>
-          )}
-          <Group justify="flex-end">
-            <Button leftSection={<Upload size={16} />} disabled={!ready} loading={busy} onClick={submit}>
-              {T`匯入 ${rows.length} 筆`}
+            <Button variant="subtle" size="compact-sm" w="fit-content" onClick={() => setAll(!all)}>
+              {all ? T`只顯示前 ${PREVIEW_ROWS} 筆` : T`顯示全部 ${rows.length} 筆`}
             </Button>
-          </Group>
+          )}
         </>
+      )}
+
+      {unknown.length > 0 && (
+        <Alert color="warn" icon={<UserPlus size={18} />} title={T`新增 ${unknown.length} 個帳戶`}>
+          <Text fz="xs" mb="sm">
+            {t("CSV 裡這些名稱還沒有帳戶,匯入時會先建立。請確認類別和幣別:")}
+          </Text>
+          <Stack gap="xs">
+            {unknown.map((u, i) => {
+              const p = pickOf(u)
+              const set = (patch: Partial<Pick>) => setPicks((m) => ({ ...m, [u.name]: { ...p, ...patch } }))
+              const kindName = t(state.kinds.find((k) => k.key === p.kind)?.name ?? "")
+              return (
+                <Group key={u.name} gap="xs" wrap="wrap" align="center">
+                  <Stack gap={0} style={{ flex: "1 1 80px", minWidth: 0 }}>
+                    <Text fz="sm" fw={500} style={{ overflowWrap: "anywhere" }}>
+                      {u.name}
+                    </Text>
+                    {p.guessed && (
+                      <Text fz="xs" c="warn" id={`guess-${i}`}>
+                        {T`沒有「${u.kind}」這個類別,先用「${kindName}」`}
+                      </Text>
+                    )}
+                  </Stack>
+                  {/* the two pickers stay side by side; on a narrow screen they wrap under the name together */}
+                  <Group gap="xs" wrap="nowrap">
+                    <KindSelect
+                      size="xs"
+                      w={150}
+                      aria-label={T`${u.name} 的類別`}
+                      aria-describedby={p.guessed ? `guess-${i}` : undefined}
+                      value={p.kind}
+                      onChange={(v) => v && set({ kind: v, guessed: false })}
+                    />
+                    <CurrencyInput
+                      size="xs"
+                      w={80}
+                      aria-label={T`${u.name} 的幣別`}
+                      value={p.currency}
+                      onChange={(v) => set({ currency: v })}
+                      error={CURRENCY_RE.test(p.currency) ? undefined : true}
+                    />
+                  </Group>
+                </Group>
+              )
+            })}
+          </Stack>
+        </Alert>
+      )}
+
+      {rows.length > 0 && (
+        <Group justify="flex-end">
+          <Button leftSection={<Upload size={16} />} disabled={!ready} loading={busy} onClick={submit}>
+            {unknown.length ? T`新增 ${unknown.length} 個帳戶並匯入 ${rows.length} 筆` : T`匯入 ${rows.length} 筆`}
+          </Button>
+        </Group>
       )}
     </Stack>
   )

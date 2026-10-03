@@ -1,0 +1,200 @@
+{
+  "_": "Shared by loan.go / model.go (TestLoanVectors) and web/src/features/loans/math.ts (math.check.ts): level payment (本息平均攤還 after the interest-only months), month arithmetic for grace end and payoff dates (the day clamps to the month's last day), and loan validation messages.",
+  "cases": [
+    {
+      "principal": 10000000,
+      "rate": 0.021,
+      "grace_months": 36,
+      "total_months": 360,
+      "level": 40462.9627440428
+    },
+    {
+      "principal": 5680000,
+      "rate": 0.0245,
+      "grace_months": 36,
+      "total_months": 360,
+      "level": 23981.1019465584
+    },
+    {
+      "principal": 4000000,
+      "rate": 0.023,
+      "grace_months": 0,
+      "total_months": 240,
+      "level": 20808.5464240822
+    },
+    {
+      "principal": 1200,
+      "rate": 0,
+      "grace_months": 0,
+      "total_months": 12,
+      "level": 100
+    },
+    {
+      "principal": 100,
+      "rate": 0.02,
+      "grace_months": 12,
+      "total_months": 12,
+      "level": 0
+    }
+  ],
+  "add_months": [
+    [
+      "2024-01-31",
+      1,
+      "2024-02-29"
+    ],
+    [
+      "2026-01-31",
+      1,
+      "2026-02-28"
+    ],
+    [
+      "2024-08-31",
+      6,
+      "2025-02-28"
+    ],
+    [
+      "2024-02-29",
+      12,
+      "2025-02-28"
+    ],
+    [
+      "2020-01-31",
+      13,
+      "2021-02-28"
+    ],
+    [
+      "2024-05-15",
+      360,
+      "2054-05-15"
+    ],
+    [
+      "2023-09-19",
+      36,
+      "2026-09-19"
+    ]
+  ],
+  "validation": [
+    {
+      "loan": {
+        "name": "房貸",
+        "principal": 1000000,
+        "rate": 0.02,
+        "start": "2024-01-31",
+        "grace_months": 0,
+        "total_months": 360
+      },
+      "error": ""
+    },
+    {
+      "loan": {
+        "name": "  ",
+        "principal": 1000000,
+        "rate": 0.02,
+        "start": "2024-01-31",
+        "grace_months": 0,
+        "total_months": 360
+      },
+      "error": "名稱和本金必填"
+    },
+    {
+      "loan": {
+        "name": "房貸",
+        "principal": 0,
+        "rate": 0.02,
+        "start": "2024-01-31",
+        "grace_months": 0,
+        "total_months": 360
+      },
+      "error": "名稱和本金必填"
+    },
+    {
+      "loan": {
+        "name": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "principal": 1000000,
+        "rate": 0.02,
+        "start": "2024-01-31",
+        "grace_months": 0,
+        "total_months": 360
+      },
+      "error": "文字太長"
+    },
+    {
+      "loan": {
+        "name": "房貸",
+        "principal": 2000000000000000.0,
+        "rate": 0.02,
+        "start": "2024-01-31",
+        "grace_months": 0,
+        "total_months": 360
+      },
+      "error": "本金太大"
+    },
+    {
+      "loan": {
+        "name": "房貸",
+        "principal": 1000000,
+        "rate": 0.25,
+        "start": "2024-01-31",
+        "grace_months": 0,
+        "total_months": 360
+      },
+      "error": "年利率要在 0–20% 之間"
+    },
+    {
+      "loan": {
+        "name": "房貸",
+        "principal": 1000000,
+        "rate": -0.01,
+        "start": "2024-01-31",
+        "grace_months": 0,
+        "total_months": 360
+      },
+      "error": "年利率要在 0–20% 之間"
+    },
+    {
+      "loan": {
+        "name": "房貸",
+        "principal": 1000000,
+        "rate": 0.02,
+        "start": "2024-01-31",
+        "grace_months": 0,
+        "total_months": 601
+      },
+      "error": "總期數 1–600 個月,寬限期要小於總期數"
+    },
+    {
+      "loan": {
+        "name": "房貸",
+        "principal": 1000000,
+        "rate": 0.02,
+        "start": "2024-01-31",
+        "grace_months": 360,
+        "total_months": 360
+      },
+      "error": "總期數 1–600 個月,寬限期要小於總期數"
+    },
+    {
+      "loan": {
+        "name": "房貸",
+        "principal": 1000000,
+        "rate": 0.02,
+        "start": "1899-12-31",
+        "grace_months": 0,
+        "total_months": 360
+      },
+      "error": "日期要在 1900–2199 年之間"
+    },
+    {
+      "loan": {
+        "name": "房貸",
+        "principal": 1000000,
+        "rate": 0.02,
+        "start": "2024-02-30",
+        "grace_months": 0,
+        "total_months": 360
+      },
+      "error": "起始日期格式錯誤"
+    }
+  ]
+}

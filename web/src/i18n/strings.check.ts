@@ -43,16 +43,24 @@ const holes = (tpl: string) => {
 }
 const missing = new Set<string>()
 const need = (k: string, where: string) => han.test(k) && !seen.has(k) && missing.add(`${where}: "${k}"`)
+// Not UI text: demo data carries its own English, format.ts's 萬/億 are unit suffixes, 中文 names the language.
+const NOT_UI = /lib\/(demo|format)\.ts$|strings\.ts$|i18n\/en\.ts$/
 for (const f of files(src, /\.tsx?$/).filter((f) => !f.pathname.endsWith("i18n/index.ts"))) {
   const text = readFileSync(f, "utf8")
   const where = f.pathname.split("/src/")[1]
   for (const m of text.matchAll(/\bt\(\s*"([^"]+)"\s*\)/g)) need(m[1], where)
   for (const m of text.matchAll(/\bT`([^`]*)`/g)) need(holes(m[1]), where)
+  if (NOT_UI.test(where)) continue
+  // Han written straight into JSX (<Text>總資產</Text>) never reaches t(): always an error
+  const code = text.replace(/\{\/\*[\s\S]*?\*\/\}|\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:"'`])\/\/.*$/gm, "$1")
+  for (const m of code.matchAll(/>([^<>{}]*[\u4e00-\u9fff][^<>{}]*)</g)) bad.push(`${where}: Chinese JSX text not wrapped in t(): "${m[1].trim()}"`)
+  // and any other Chinese string literal (a `label: "…"` rendered later with t(label)) needs its English too
+  for (const m of code.replace(/`(?:[^`\\]|\\.)*`/g, "``").matchAll(/"([^"\n]*[\u4e00-\u9fff][^"\n]*)"/g)) if (m[1] !== "中文") need(m[1], where)
 }
 for (const f of files(go, /\.go$/)) {
   const text = readFileSync(f, "utf8")
   const where = f.pathname.split("/internal/")[1]
-  for (const m of text.matchAll(/(?:bad\(c, [^,]+, |errf\(|return |"error": )"([^"]+)"/g)) need(m[1], where)
+  for (const m of text.matchAll(/(?:bad\(c, [^,]+, |errf\(|errs\.add\(|return |"error": )"([^"]+)"/g)) need(m[1], where)
 }
 if (missing.size) bad.push("missing English:\n" + [...missing].join("\n"))
 

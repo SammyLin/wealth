@@ -1,21 +1,24 @@
 # Self-hosted image: builds the UI, embeds it into the Go binary, runs as a non-root user with data in /data.
 #   docker compose up -d        (see compose.yaml; set WEALTH_PASS in .env first)
 
-FROM node:24-alpine AS web
+# The build stages run on the build machine's own platform and cross-compile, so a multi-arch image
+# (release.yml: linux/amd64 + linux/arm64) doesn't run npm and the Go compiler under emulation.
+FROM --platform=$BUILDPLATFORM node:24-alpine AS web
 WORKDIR /src/web
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY web/ ./
 RUN npm run build
 
-FROM golang:1.26-alpine AS server
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS server
+ARG TARGETOS TARGETARCH
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=web /src/web/dist ./web/dist
 # modernc.org/sqlite is pure Go, so the binary is static
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/wealth ./cmd/wealth
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/wealth ./cmd/wealth
 
 FROM alpine:3.22
 RUN adduser -D -u 10001 wealth && mkdir /data && chown wealth /data

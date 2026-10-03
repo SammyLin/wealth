@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, type Ref } from "react"
 import { Button, ColorInput, Group, Select, SimpleGrid, Text, TextInput } from "@mantine/core"
 import { useForm } from "@mantine/form"
 import { notifications } from "@mantine/notifications"
@@ -6,13 +6,16 @@ import { Check } from "lucide-react"
 import { useLedgerState } from "../../api/useLedger"
 import type { Liquidity } from "../../api/types"
 import { T, t } from "../../i18n"
-import { LIQUIDITY, slugKey, SWATCHES } from "./logic"
+import { HEX_RE } from "../../lib/format"
+import { LIQUIDITY } from "../../lib/liquidity"
+import { useDirty } from "../../shell/dirty"
+import { slugKey, SWATCHES } from "./logic"
 
-// Stable identity, so React calls it once when the form mounts (the form opens inline, outside any focus trap).
-const focusOnMount = (el: HTMLInputElement | null) => el?.focus()
-
-/** New account class. Its internal key is derived from the name (slugKey) and never shown. */
-export function KindForm({ onDone }: { onDone: () => void }) {
+/**
+ * New account class. Its internal key is derived from the name (slugKey) and never shown. The list focuses
+ * `nameRef` once its Collapse has opened (focusing earlier, while the panel is still hidden, drops focus to body).
+ */
+export function KindForm({ onDone, nameRef }: { onDone: () => void; nameRef?: Ref<HTMLInputElement> }) {
   const { state, createKind } = useLedgerState()
   const taken = state.kinds.map((k) => k.key)
   const [saving, setSaving] = useState(false)
@@ -29,9 +32,11 @@ export function KindForm({ onDone }: { onDone: () => void }) {
           : state.kinds.some((k) => [k.name, t(k.name)].some((n) => n.toLowerCase() === v.trim().toLowerCase()))
             ? t("已經有同名的類別")
             : null,
-      color: (v) => (/^#[0-9a-f]{6}$/i.test(v) ? null : t("顏色格式要是 #rrggbb")),
+      color: (v) => (HEX_RE.test(v) ? null : t("顏色格式要是 #rrggbb")),
     },
   })
+
+  useDirty(form.isDirty())
 
   const submit = form.onSubmit(async (v) => {
     setSaving(true)
@@ -51,7 +56,7 @@ export function KindForm({ onDone }: { onDone: () => void }) {
         {t("新增類別")}
       </Text>
       <SimpleGrid cols={{ base: 1, xs: 2 }} spacing="sm" verticalSpacing="sm">
-        <TextInput label={t("名稱")} placeholder={t("例如:保險、退休金")} required maxLength={30} ref={focusOnMount} {...form.getInputProps("name")} />
+        <TextInput label={t("名稱")} placeholder={t("例如:保險、退休金")} required maxLength={30} ref={nameRef} {...form.getInputProps("name")} />
         <ColorInput label={t("顏色")} required swatches={SWATCHES} swatchesPerRow={10} withEyeDropper={false} {...form.getInputProps("color")} />
         <Select
           label={t("流動性")}

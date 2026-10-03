@@ -1,8 +1,8 @@
 import { useId, useState, type ReactNode } from "react"
-import { Box, Button, Collapse, Divider, EmptyState, Flex, Group, Skeleton, Stack, Text, Title, UnstyledButton } from "@mantine/core"
+import { Box, Button, Collapse, Divider, EmptyState, Flex, Group, Stack, Text, Title, UnstyledButton } from "@mantine/core"
 import { useLocalStorage } from "@mantine/hooks"
 import { Archive, ArchiveRestore, ChevronRight, Plus, WalletCards } from "lucide-react"
-import { useLedger, useMoney } from "../../api/useLedger"
+import { useLedgerState, useMoney } from "../../api/useLedger"
 import { T, t } from "../../i18n"
 import { fmtPct } from "../../lib/format"
 import { useOpenDialog } from "../../shell/dialogs"
@@ -11,18 +11,11 @@ import { AccountRow } from "./AccountRow"
 import { buildSheet, type Group as SheetGroup } from "./sheet"
 
 export function BalanceSheet() {
-  const { state } = useLedger()
+  const { state } = useLedgerState()
   const money = useMoney()
   const open = useOpenDialog()
   const [showArchived, setShowArchived] = useState(false)
   const [collapsed, setCollapsed] = useLocalStorage<string[]>({ key: "wealth.sheet.collapsed", defaultValue: [] })
-
-  if (!state)
-    return (
-      <SectionCard title={t("資產負債表")}>
-        <Skeleton h={220} aria-label={t("載入中…")} />
-      </SectionCard>
-    )
 
   const base = state.settings.base_currency
   const sheet = buildSheet(state.accounts, state.kinds, showArchived)

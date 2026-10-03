@@ -1,18 +1,18 @@
 import { useMemo, useState } from "react"
 import { useDisclosure } from "@mantine/hooks"
-import { ActionIcon, Box, Button, EmptyState, Group, Skeleton, Stack, Text, Timeline, Tooltip } from "@mantine/core"
-import { modals } from "@mantine/modals"
+import { ActionIcon, Button, EmptyState, Group, Text, Timeline, Tooltip } from "@mantine/core"
 import { notifications } from "@mantine/notifications"
 import { Flag, Pencil, Plus, Trash2 } from "lucide-react"
 import type { Event } from "../../api/types"
-import { useLedger, useMoney } from "../../api/useLedger"
+import { useLedgerState, useMoney } from "../../api/useLedger"
 import { T, t } from "../../i18n"
 import { fmtDate } from "../../lib/format"
+import { askConfirm } from "../../shell/confirm"
 import { SectionCard } from "../../shell/SectionCard"
 import { EventModal } from "./EventModal"
 
 export function Events() {
-  const { state, deleteEvent } = useLedger()
+  const { state, deleteEvent } = useLedgerState()
   const money = useMoney()
   // `editing` outlives `opened` so the modal keeps its title through the close transition.
   const [opened, { open, close }] = useDisclosure(false)
@@ -21,22 +21,22 @@ export function Events() {
 
   // Newest first, each with the net worth on record at that date (series is ascending by date).
   const items = useMemo(() => {
-    const series = state?.series ?? []
-    return [...(state?.events ?? [])]
+    const series = state.series
+    return [...state.events]
       .sort((a, b) => b.date.localeCompare(a.date) || b.id - a.id)
       .map((e) => ({ ...e, worth: series.findLast((r) => r.date <= e.date)?.total }))
-  }, [state?.events, state?.series])
+  }, [state.events, state.series])
 
   const confirmDelete = (e: Event) =>
-    modals.openConfirmModal({
+    askConfirm({
       title: t("刪除這件大事?"),
-      children: (
-        <Text fz="sm">
+      body: (
+        <>
           <span className="num">{fmtDate(e.date)}</span> {e.title}
-        </Text>
+        </>
       ),
-      labels: { confirm: t("刪除"), cancel: t("取消") },
-      confirmProps: { color: "red", leftSection: <Trash2 size={16} /> },
+      confirm: t("刪除"),
+      danger: true,
       onConfirm: () =>
         deleteEvent(e.id).then(
           () => notifications.show({ icon: <Trash2 size={16} />, message: T`已刪除「${e.title}」` }),
@@ -45,26 +45,14 @@ export function Events() {
     })
 
   const add = (
-    <Button variant="default" leftSection={<Plus size={16} />} disabled={!state} onClick={() => edit(null)}>
+    <Button variant="default" leftSection={<Plus size={16} />} onClick={() => edit(null)}>
       {t("新增大事")}
     </Button>
   )
 
   return (
     <SectionCard title={t("大事記")} description={t("買房、換工作、年終這類轉折,會畫在趨勢圖上。")} actions={add}>
-      {!state ? (
-        <Stack gap="lg" aria-busy="true" aria-label={t("載入中…")}>
-          {[0, 1, 2].map((i) => (
-            <Group key={i} gap="md" wrap="nowrap">
-              <Skeleton circle h={14} />
-              <Box flex={1}>
-                <Skeleton h={14} w="50%" mb={8} />
-                <Skeleton h={10} w={90} />
-              </Box>
-            </Group>
-          ))}
-        </Stack>
-      ) : !items.length ? (
+      {!items.length ? (
         <EmptyState
           variant="light"
           icon={<Flag size={24} />}
@@ -88,7 +76,7 @@ export function Events() {
                       </ActionIcon>
                     </Tooltip>
                     <Tooltip label={t("刪除")}>
-                      <ActionIcon size="lg" variant="subtle" color="red" aria-label={T`刪除 ${e.title}`} onClick={() => confirmDelete(e)}>
+                      <ActionIcon size="lg" variant="subtle" color="down" aria-label={T`刪除 ${e.title}`} onClick={() => confirmDelete(e)}>
                         <Trash2 size={16} />
                       </ActionIcon>
                     </Tooltip>

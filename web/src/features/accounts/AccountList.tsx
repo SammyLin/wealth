@@ -1,6 +1,6 @@
 import { useState } from "react"
-import { Accordion, ActionIcon, Box, Button, Card, Collapse, ColorSwatch, Divider, EmptyState, Group, Stack, Text } from "@mantine/core"
-import { Archive, ArrowDown, ArrowUp, PenLine, Plus, WalletCards } from "lucide-react"
+import { Accordion, Box, Button, Card, Collapse, ColorSwatch, Divider, EmptyState, Group, Stack, Text } from "@mantine/core"
+import { Archive, PenLine, Plus, WalletCards } from "lucide-react"
 import { useLedgerState, useMoney } from "../../api/useLedger"
 import type { Account } from "../../api/types"
 import { T, t } from "../../i18n"
@@ -8,6 +8,7 @@ import { useOpenDialog } from "../../shell/dialogs"
 import { AccountForm } from "./AccountForm"
 import { HistoryTable } from "./HistoryTable"
 import { moved } from "./logic"
+import { MoveButtons } from "./MoveButtons"
 
 /** Accounts as an accordion: the row summarizes, the panel edits the account and its history. */
 export function AccountList({ initialOpen }: { initialOpen?: number }) {
@@ -19,10 +20,10 @@ export function AccountList({ initialOpen }: { initialOpen?: number }) {
   const active = state.accounts.filter((a) => !a.archived)
   const archived = state.accounts.filter((a) => a.archived)
 
-  const move = async (i: number, delta: -1 | 1) => {
+  const move = async (i: number, to: number) => {
     setMoving(true)
     try {
-      await reorderAccounts([...moved(active, i, delta), ...archived].map((a) => a.id))
+      await reorderAccounts([...moved(active, i, to), ...archived].map((a) => a.id))
     } catch {
       /* useLedger already showed the error */
     } finally {
@@ -31,7 +32,7 @@ export function AccountList({ initialOpen }: { initialOpen?: number }) {
   }
 
   const item = (a: Account, i: number) => (
-    <AccountItem key={a.id} account={a} opened={open === String(a.id)} moving={moving} onMove={a.archived ? undefined : (d) => move(i, d)} first={i === 0} last={i === active.length - 1} />
+    <AccountItem key={a.id} account={a} opened={open === String(a.id)} moving={moving} onMove={a.archived ? undefined : (to) => move(i, to)} index={i} count={active.length} />
   )
 
   return (
@@ -92,9 +93,9 @@ export function AccountList({ initialOpen }: { initialOpen?: number }) {
   )
 }
 
-type ItemProps = { account: Account; opened: boolean; moving: boolean; first: boolean; last: boolean; onMove?: (delta: -1 | 1) => void }
+type ItemProps = { account: Account; opened: boolean; moving: boolean; index: number; count: number; onMove?: (to: number) => void }
 
-function AccountItem({ account: a, opened, moving, first, last, onMove }: ItemProps) {
+function AccountItem({ account: a, opened, moving, index, count, onMove }: ItemProps) {
   const { state } = useLedgerState()
   const money = useMoney()
   const kind = state.kinds.find((k) => k.key === a.kind)
@@ -129,16 +130,7 @@ function AccountItem({ account: a, opened, moving, first, last, onMove }: ItemPr
             </Box>
           </Group>
         </Accordion.Control>
-        {onMove && (
-          <Stack gap={4}>
-            <ActionIcon size="md" disabled={first || moving} aria-label={T`把「${a.name}」往上移`} onClick={() => onMove(-1)}>
-              <ArrowUp size={14} />
-            </ActionIcon>
-            <ActionIcon size="md" disabled={last || moving} aria-label={T`把「${a.name}」往下移`} onClick={() => onMove(1)}>
-              <ArrowDown size={14} />
-            </ActionIcon>
-          </Stack>
-        )}
+        {onMove && <MoveButtons name={a.name} index={index} count={count} busy={moving} onMove={onMove} stacked />}
       </Box>
       <Accordion.Panel>
         {opened && (

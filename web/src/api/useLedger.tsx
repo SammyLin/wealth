@@ -1,27 +1,34 @@
 /* oxlint-disable react/only-export-components -- the provider and its hooks live together per docs/BRIEF.md */
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import { notifications } from "@mantine/notifications"
 import { t, useLang } from "../i18n"
 import { fmtMoney, type MoneyOpts } from "../lib/format"
 import * as api from "./client"
-import type { State } from "./types"
+import type { NewAccount, State } from "./types"
 
-// Every mutation: call the API, then reload /api/state. On failure a notification is shown and the
-// error is rethrown, so a dialog can `try { await m.x(); close() } catch { /* stay open */ }`.
+// Every mutation: call the API, then reload /api/state (after a failure too: a multi-step mutation like the
+// import may have done part of its work). On failure a notification is shown and the error is rethrown, so a
+// dialog can `try { await m.x(); close() } catch { /* stay open */ }`.
 
 function useLedgerValue() {
   const [state, setState] = useState<State | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<Error | null>(null)
 
+  // Only the latest request may land: an older, slower response must not overwrite a newer one. A failed
+  // refresh keeps the data already shown and sets `error`, which App shows as a banner.
+  const latest = useRef(0)
   const refresh = useCallback(async () => {
+    const n = ++latest.current
     try {
-      setState(await api.getState())
+      const s = await api.getState()
+      if (n !== latest.current) return
+      setState(s)
       setError(null)
     } catch (e) {
-      setError(e as Error)
+      if (n === latest.current) setError(e as Error)
     } finally {
-      setLoading(false)
+      if (n === latest.current) setLoading(false)
     }
   }, [])
 
@@ -35,12 +42,12 @@ function useLedgerValue() {
       <A extends unknown[], R>(fn: (...args: A) => Promise<R>) =>
       async (...args: A): Promise<R> => {
         try {
-          const r = await fn(...args)
-          await refresh()
-          return r
+          return await fn(...args)
         } catch (e) {
-          notifications.show({ color: "red", title: t("操作失敗"), message: (e as Error).message })
+          notifications.show({ color: "down", title: t("操作失敗"), message: (e as Error).message })
           throw e
+        } finally {
+          await refresh()
         }
       }
     return {
@@ -55,7 +62,8 @@ function useLedgerValue() {
       deleteAccount: wrap(api.deleteAccount),
       saveSnapshots: wrap(api.putSnapshots),
       deleteSnapshot: wrap(api.deleteSnapshot),
-      importCSV: wrap(api.importCSV),
+      // One request: the server creates the accounts the CSV names but the ledger lacks, then imports.
+      importCSV: wrap((csv: Blob, create: NewAccount[] = []) => api.importCSV(csv, create)),
       saveEvent: wrap(api.saveEvent),
       deleteEvent: wrap(api.deleteEvent),
       saveLoan: wrap(api.saveLoan),

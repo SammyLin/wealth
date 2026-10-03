@@ -1,74 +1,82 @@
-import { useMemo, useState } from "react"
-import { ActionIcon, Button, EmptyState, Group, SegmentedControl, Skeleton, Stack, Text, Tooltip } from "@mantine/core"
+import { useMemo } from "react"
+import { ActionIcon, Button, EmptyState, Group, SegmentedControl, Stack, Text, Tooltip } from "@mantine/core"
 import { LineChart } from "@mantine/charts"
-import { ChartLine, MoveHorizontal, PenLine, ZoomOut } from "lucide-react"
-import { useLedger, useMoney } from "../../api/useLedger"
+import { DateInput } from "@mantine/dates"
+import { useMediaQuery } from "@mantine/hooks"
+import { CalendarDays, ChartLine, MoveHorizontal, PenLine, ZoomOut } from "lucide-react"
+import { useLedgerState, useMoney } from "../../api/useLedger"
 import type { Event, Row } from "../../api/types"
 import { t, T } from "../../i18n"
-import { fmtDate, fmtPct, fmtTick, todayISO, toIso, toMs } from "../../lib/format"
+import { fmtDate, fmtPct, fmtTick, parseDay, todayISO, toIso, toMs } from "../../lib/format"
+import { ChartTable } from "../../shell/ChartTable"
 import { SectionCard } from "../../shell/SectionCard"
 import { useOpenDialog } from "../../shell/dialogs"
-import { inPeriod, PERIOD_MONTHS, usefulPeriods, type Period } from "./data"
+import { niceTicks } from "./data"
+import { useTrendRange, type RangeKind, type Zoom } from "./range"
 
-const PERIOD_LABEL: Record<Period, string> = { "3M": "3個月", "6M": "6個月", "1Y": "1年", "3Y": "3年", "5Y": "5年", all: "全部" }
+const RANGE_LABEL: Record<RangeKind, string> = { "3M": "3個月", "6M": "6個月", "1Y": "1年", "3Y": "3年", "5Y": "5年", all: "全部", custom: "自訂" }
 const DAY = 864e5
 
-type Zoom = [number, number] // brushed window, indexes into the period's rows
-
 export function Trend() {
-  const { state } = useLedger()
-  const [picked, setPicked] = useState<Period | null>(null)
-  const [zoom, setZoom] = useState<Zoom | null>(null)
-  if (!state) return <TrendSkeleton />
-
-  const options = usefulPeriods(state.series)
-  const period = picked && options.includes(picked) ? picked : options.includes("1Y") ? "1Y" : "all"
-  const rows = inPeriod(state.series, period)
-  const z = zoom && zoom[1] < rows.length && (zoom[0] > 0 || zoom[1] < rows.length - 1) ? zoom : null
-  const shown = z ? rows.slice(z[0], z[1] + 1) : rows
-  const changeLabel = z
-    ? `${fmtDate(shown[0].date)} → ${fmtDate(shown[shown.length - 1].date)}`
-    : period === "all"
-      ? T`自 ${fmtDate(rows[0]?.date ?? "")} 起`
-      : PERIOD_MONTHS[period] < 12
-        ? T`近 ${PERIOD_MONTHS[period]} 個月`
-        : T`近 ${PERIOD_MONTHS[period] / 12} 年`
+  const { state } = useLedgerState()
+  const range = useTrendRange()
+  const { kind, rows, zoom, shown } = range
+  const choices: RangeKind[] = state.series.length > 2 ? [...range.options, "custom"] : range.options
 
   return (
     <SectionCard
       title={t("淨資產趨勢")}
-      description={shown.length > 1 ? <Change rows={shown} label={changeLabel} /> : t("每一次記錄的淨資產;虛線是你標記的大事。")}
+      description={shown.length > 1 ? <Change rows={shown} label={range.label} /> : t("每一次記錄的淨資產;虛線是你標記的大事。")}
       actions={
         <>
-          {z && (
+          {zoom && (
             <Tooltip label={t("還原縮放")}>
-              <ActionIcon aria-label={t("還原縮放")} onClick={() => setZoom(null)}>
+              <ActionIcon aria-label={t("還原縮放")} onClick={() => range.setZoom(null)}>
                 <ZoomOut size={16} />
               </ActionIcon>
             </Tooltip>
           )}
-          {options.length > 1 && (
+          {choices.length > 1 && (
             <SegmentedControl
               size="xs"
               aria-label={t("時間範圍")}
-              value={period}
-              onChange={(v) => {
-                setPicked(v as Period)
-                setZoom(null)
-              }}
-              data={options.map((p) => ({ value: p, label: t(PERIOD_LABEL[p]) }))}
+              value={kind}
+              onChange={(v) => range.setKind(v as RangeKind)}
+              data={choices.map((p) => ({ value: p, label: t(RANGE_LABEL[p]) }))}
             />
           )}
         </>
       }
     >
-      {rows.length > 1 ? <Chart rows={rows} events={state.events} zoom={z} onZoom={setZoom} /> : <TooFew row={rows[0]} />}
+      {kind === "custom" && range.custom && <CustomRange value={range.custom} onChange={range.setCustom} />}
+      {rows.length > 1 ? (
+        <Chart rows={rows} events={state.events} zoom={zoom} onZoom={range.setZoom} />
+      ) : kind === "custom" ? (
+        <Text c="dimmed" fz="sm" ta="center" py="xl">
+          {t("這段期間的紀錄不到兩筆,畫不出趨勢。")}
+        </Text>
+      ) : (
+        <TooFew row={rows[0]} />
+      )}
     </SectionCard>
+  )
+}
+
+/** Two typed dates (2026-01-01, 2026.1.1 or "Jan 1, 2026"); the range is whatever records fall between them. */
+function CustomRange({ value: [from, to], onChange }: { value: [string, string]; onChange: (v: [string, string]) => void }) {
+  const today = todayISO()
+  const field = { size: "xs", dateParser: parseDay, maxDate: today, leftSection: <CalendarDays size={14} aria-hidden />, w: 150 } as const
+  return (
+    <Group gap="xs" mb="sm" wrap="wrap">
+      <DateInput {...field} label={t("從")} value={from} onChange={(v) => v && onChange(v <= to ? [v, to] : [v, v])} />
+      <DateInput {...field} label={t("到")} value={to} onChange={(v) => v && onChange(v >= from ? [from, v] : [v, v])} />
+    </Group>
   )
 }
 
 function Chart({ rows, events, zoom, onZoom }: { rows: Row[]; events: Event[]; zoom: Zoom | null; onZoom: (z: Zoom) => void }) {
   const money = useMoney()
+  const coarse = useMediaQuery("(pointer: coarse)")
   const data = useMemo(() => rows.map((r) => ({ t: toMs(r.date), total: r.total })), [rows])
   const [first, last] = zoom ? [rows[zoom[0]], rows[zoom[1]]] : [rows[0], rows[rows.length - 1]]
   // Unzoomed, the axis runs on to the latest milestone up to today, so one marked after the last record still shows.
@@ -77,14 +85,18 @@ function Chart({ rows, events, zoom, onZoom }: { rows: Row[]; events: Event[]; z
   const short = x1 - x0 < 200 * DAY
   const tick = (ms: number) => fmtTick(toIso(ms), short)
   const brush = data.length > 3
-  const titleOf = (e: Event) => (e.title.length > 10 ? e.title.slice(0, 9) + "…" : e.title)
-  // A nearly flat stretch would get ticks closer than the unit shows (−323.6K four times): keep the y range at
-  // least 4% of the values so neighbouring labels differ.
+  // by code point, so an emoji is never cut in half
+  const titleOf = (e: Event) => {
+    const cps = [...e.title]
+    return cps.length > 12 ? cps.slice(0, 11).join("").trimEnd() + "…" : e.title
+  }
+  // Round ticks (d3-style) on a range at least 4% of the values wide, so a nearly flat stretch doesn't get
+  // neighbouring labels that read the same in the chosen unit (−323.6K four times).
   const totals = (zoom ? rows.slice(zoom[0], zoom[1] + 1) : rows).map((r) => r.total)
   const [lo, hi] = [Math.min(...totals), Math.max(...totals)]
   const minSpan = Math.max(Math.abs(lo), Math.abs(hi)) * 0.04 || 1
-  const yDomain = hi - lo < minSpan ? [(lo + hi) / 2 - minSpan / 2, (lo + hi) / 2 + minSpan / 2] : ["auto", "auto"]
-  // A label in the right fifth of the range is drawn to the left of its line so it isn't cut off at the edge.
+  const yTicks = hi - lo < minSpan ? niceTicks((lo + hi) / 2 - minSpan / 2, (lo + hi) / 2 + minSpan / 2) : niceTicks(lo, hi)
+  // A label in the right fifth of the range ends at its line instead of starting there, so it isn't cut off at the edge.
   const side = (e: Event) => (toMs(e.date) > x0 + (x1 - x0) * 0.8 ? "insideTopRight" : "insideTopLeft")
 
   return (
@@ -102,7 +114,7 @@ function Chart({ rows, events, zoom, onZoom }: { rows: Row[]; events: Event[]; z
         activeDotProps={{ r: 5, strokeWidth: 2, stroke: "var(--mantine-color-body)" }}
         valueFormatter={(v) => money(v)}
         xAxisProps={{ type: "number", scale: "time", domain: ["dataMin", (max: number) => Math.max(max, lastEvent)], tickFormatter: tick }}
-        yAxisProps={{ width: 76, domain: yDomain }}
+        yAxisProps={{ width: 76, domain: [yTicks[0], yTicks[yTicks.length - 1]], ticks: yTicks, interval: 0 }}
         referenceLines={events.map((e) => ({
           x: toMs(e.date),
           label: titleOf(e),
@@ -113,8 +125,9 @@ function Chart({ rows, events, zoom, onZoom }: { rows: Row[]; events: Event[]; z
         tooltipProps={{ labelFormatter: (label) => <TipLabel ms={Number(label)} events={events} /> }}
         withBrush={brush}
         brushProps={{
-          height: 26,
-          travellerWidth: 10,
+          // handles wide enough to grab with a finger (the 44px rule can't reach recharts' SVG)
+          height: 36,
+          travellerWidth: 24,
           fill: "var(--wealth-paper-2)",
           stroke: "var(--mantine-color-gold-5)",
           tickFormatter: () => "", // the range is shown in the section description instead (traveller text clips at the edge)
@@ -128,9 +141,15 @@ function Chart({ rows, events, zoom, onZoom }: { rows: Row[]; events: Event[]; z
       {brush && (
         <Group gap={6} c="dimmed" justify="center">
           <MoveHorizontal size={14} aria-hidden />
-          <Text fz="xs">{t("拖曳圖表下方滑桿的兩端(或用 Tab 選取後按方向鍵),放大一段期間")}</Text>
+          {/* on touch the range buttons and the custom dates above are the easier way in */}
+          <Text fz="xs">{coarse ? t("用上方的時間範圍或「自訂」日期縮放,或拖曳圖表下方滑桿的兩端") : t("拖曳圖表下方滑桿的兩端(或用 Tab 選取後按方向鍵),放大一段期間")}</Text>
         </Group>
       )}
+      <ChartTable
+        caption={t("淨資產趨勢")}
+        head={[t("日期"), t("淨資產")]}
+        rows={() => (zoom ? rows.slice(zoom[0], zoom[1] + 1) : rows).map((r) => [fmtDate(r.date), money(r.total)])}
+      />
     </Stack>
   )
 }
@@ -156,9 +175,12 @@ function TipLabel({ ms, events }: { ms: number; events: Event[] }) {
 
 function Change({ rows, label }: { rows: Row[]; label: string }) {
   const money = useMoney()
-  const a = rows[0]
-  const d = rows[rows.length - 1].total - a.total
+  const a = rows[0], z = rows[rows.length - 1]
+  const d = z.total - a.total
   const color = d > 0 ? "var(--wealth-up)" : d < 0 ? "var(--wealth-down)" : undefined
+  // Over longer ranges the change per year too (a plain average: compounding means nothing once net worth is negative);
+  // under 1.5 years it would just repeat the total
+  const years = (toMs(z.date) - toMs(a.date)) / (365.25 * DAY)
   return (
     <>
       {label}{" "}
@@ -166,6 +188,12 @@ function Change({ rows, label }: { rows: Row[]; label: string }) {
         {money(d, { signed: true })}
         {a.total !== 0 && ` (${fmtPct(d / Math.abs(a.total), 1, true)})`}
       </Text>
+      {years >= 1.5 && (
+        <Text span inherit className="num">
+          {" · "}
+          {T`平均每年 ${money(d / years, { signed: true })}`}
+        </Text>
+      )}
     </>
   )
 }
@@ -189,13 +217,5 @@ function TooFew({ row }: { row: Row | undefined }) {
         </Group>
       </EmptyState.Actions>
     </EmptyState>
-  )
-}
-
-function TrendSkeleton() {
-  return (
-    <SectionCard title={t("淨資產趨勢")}>
-      <Skeleton h={{ base: 260, sm: 320 }} aria-busy="true" aria-label={t("載入中…")} />
-    </SectionCard>
   )
 }

@@ -16,7 +16,7 @@ export const en: Record<string, string> = {
   "銀行、台股、美股、房子、車、房貸都算。之後每次只要更新餘額。": "Bank, stocks, home, car, mortgage: it all counts. After that you only update balances.",
   "新增帳戶": "Add account",
   "操作失敗": "Something went wrong",
-  "外幣以當日中間價換算;沒更新的帳戶沿用上一筆。": "Foreign currencies use that day's mid rate; accounts you don't update carry their last balance forward.",
+  "外幣以記錄當天的中間價換算;沒更新的帳戶沿用上一筆的餘額和匯率。": "Foreign balances use the mid rate of the day they were recorded; accounts you don't update carry their last balance and rate forward.",
   "關閉": "Close",
   "上個月": "Previous month",
   "下個月": "Next month",
@@ -91,4 +91,29 @@ export const en: Record<string, string> = {
   "第 {} 列的日期在未來": "Row {}: the date is in the future",
   "這些帳戶是基準幣別,fx 要留空或填 1:{}": "These accounts are in the base currency; leave fx empty or 1: {}",
   "查不到 {} 在 {} 的匯率": "Couldn't find the {} rate for {}",
+  "畫面上的資料可能不是最新的": "What's on screen may be out of date",
+  "放棄未儲存的修改?": "Discard unsaved changes?",
+  "關掉後,還沒按儲存的修改都不會保留。": "Closing now throws away the changes you haven't saved.",
+  "放棄": "Discard",
+  "繼續編輯": "Keep editing",
+  "從 CSV 匯入": "Import from CSV",
+  // first-run class preset for ledgers outside Taiwan
+  "股票": "Stocks",
+  "海外股票": "Foreign stocks",
+  // first run: demo ledger and the base currency left open when the UI and browser languages differ
+  "例如 TWD、USD": "e.g. TWD, USD",
+  "只是想先看看?": "Just looking?",
+  "載入範例帳本": "Load a demo ledger",
+  "載入範例帳本?": "Load a demo ledger?",
+  "載入範例": "Load demo",
+  "會把一個範例家庭(8 個帳戶、30 個月的餘額、房貸和大事)寫進這個帳本,基準幣別設為 TWD。之後要自己記帳,刪掉 wealth.db(Docker 是 wealth-data volume)重新開始,或在「帳戶與類別」逐一刪除。":
+    "This writes a sample household (8 accounts, 30 months of balances, a mortgage and milestones) into this ledger, with TWD as the base currency. To start your own later, delete wealth.db (the wealth-data volume on Docker), or delete the accounts one by one under Accounts & classes.",
+  // shared: undo toasts, chart tables
+  "復原": "Undo",
+  "已復原": "Undone",
+  "以表格顯示": "Show as table",
+  "版面設定要是 4 KB 以內的 JSON,區塊只能是 trend、mix、sheet、loans、events,各一次": "The layout must be JSON under 4 KB, with each of trend, mix, sheet, loans and events at most once",
+  "排序值超出範圍": "Sort value out of range",
+  "已經有同名的帳戶:{}": "An account named {} already exists",
+  "日期要在 1900–2199 年之間": "The date must be between 1900 and 2199",
 }

@@ -10,7 +10,7 @@ Self-host (SQLite) and Workers (D1) share one router. Custom kinds, account orde
 
 - **Schema (`0003_ledgers.sql`)**: `ledgers(id, name, base_currency, created_at)`; add `ledger_id INTEGER NOT NULL` to `accounts`, `account_kinds`, `snapshots`, `events`, `loans`; `settings` becomes `(ledger_id, key, value)`. Backfill everything to ledger 1. Primary keys of `account_kinds` become `(ledger_id, key)`; indexes lead with `ledger_id`.
 - **Auth**: Cloudflare Access email (already verified in `access.go`) or generic OIDC. A middleware resolves the caller to a `users` row and to a `ledger_members(ledger_id, user_id, role)` row, then puts `ledger_id` in the request context. Self-host basic auth maps to ledger 1.
-- **API**: no path changes; every query in `store.go` / `router.go` takes `ledger_id` from context (one helper, so no handler reads it from the client). New `GET/POST /api/ledgers` and an `X-Ledger` header (or `/l/:id/api/...`) to switch.
+- **API**: no path changes; every query in the per-resource handler files (`accounts.go`, `snapshots.go`, …) and `store.go` takes `ledger_id` from context (one helper, so no handler reads it from the client). New `GET/POST /api/ledgers` and an `X-Ledger` header (or `/l/:id/api/...`) to switch.
 - **Settings**: per-ledger already (title, base currency, unit, layout); language and color scheme stay per-browser.
 - **Tests**: a cross-tenant test per route (ledger A can never read or write ledger B).
 

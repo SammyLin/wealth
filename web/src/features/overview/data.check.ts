@@ -1,23 +1,21 @@
-// Self-check, not bundled: `node src/features/overview/data.check.ts` (Node ≥ 23 strips the types).
-import { inPeriod, liquidityMix, movers, usefulPeriods } from "./data.ts"
-import type { Kind, Row } from "../../api/types.ts"
+// Self-check, not bundled: `node src/features/overview/data.check.ts` (Node ≥ 23 strips the types); `npm run check` runs every *.check.ts with node --test.
+import assert from "node:assert/strict"
+import { inPeriod, inRange, liquidityMix, movers, niceTicks, topAccount, usefulPeriods } from "./data.ts"
+import type { Account, Kind, Row } from "../../api/types.ts"
 
-const eq = (got: unknown, want: unknown) => {
-  if (JSON.stringify(got) !== JSON.stringify(want)) throw new Error(`got ${JSON.stringify(got)}, want ${JSON.stringify(want)}`)
-}
 const row = (date: string, total = 0, by_kind: Record<string, number> = {}): Row => ({ date, total, by_kind })
 const rows = [row("2020-01-01"), row("2023-06-01"), row("2025-09-01"), row("2026-01-01"), row("2026-10-01")]
 
-eq(inPeriod(rows, "all").length, 5)
-eq(inPeriod(rows, "1Y").map((r) => r.date), ["2025-09-01", "2026-01-01", "2026-10-01"]) // one before the window
-eq(inPeriod(rows, "3Y").map((r) => r.date), ["2023-06-01", "2025-09-01", "2026-01-01", "2026-10-01"])
-eq(inPeriod([row("2026-10-01")], "1Y").length, 1)
-eq(inPeriod([], "1Y").length, 0)
-eq(inPeriod(rows, "3M").map((r) => r.date), ["2026-01-01", "2026-10-01"])
-eq(usefulPeriods(rows), ["3M", "1Y", "3Y", "all"]) // 6M = same rows as 3M; 5Y keeps the 2020 row as its left edge = same as all
-eq(usefulPeriods(rows.slice(2)), ["3M", "all"])
-eq(usefulPeriods(rows.slice(3)), ["all"])
-eq(usefulPeriods([]), ["all"])
+assert.deepStrictEqual(inPeriod(rows, "all").length, 5)
+assert.deepStrictEqual(inPeriod(rows, "1Y").map((r) => r.date), ["2025-09-01", "2026-01-01", "2026-10-01"]) // one before the window
+assert.deepStrictEqual(inPeriod(rows, "3Y").map((r) => r.date), ["2023-06-01", "2025-09-01", "2026-01-01", "2026-10-01"])
+assert.deepStrictEqual(inPeriod([row("2026-10-01")], "1Y").length, 1)
+assert.deepStrictEqual(inPeriod([], "1Y").length, 0)
+assert.deepStrictEqual(inPeriod(rows, "3M").map((r) => r.date), ["2026-01-01", "2026-10-01"])
+assert.deepStrictEqual(usefulPeriods(rows), ["3M", "1Y", "3Y", "all"]) // 6M = same rows as 3M; 5Y keeps the 2020 row as its left edge = same as all
+assert.deepStrictEqual(usefulPeriods(rows.slice(2)), ["3M", "all"])
+assert.deepStrictEqual(usefulPeriods(rows.slice(3)), ["all"])
+assert.deepStrictEqual(usefulPeriods([]), ["all"])
 
 const kinds: Kind[] = [
   { key: "bank", name: "銀行", color: "#111111", liquidity: "liquid", sort: 0 },
@@ -27,14 +25,31 @@ const kinds: Kind[] = [
   { key: "loan", name: "房貸", color: "#555555", liquidity: "liability", sort: 4 },
 ]
 const m = liquidityMix(row("2026-10-01", 0, { bank: 100, tw: 50, us: 80, loan: -60, gone: 999 }), kinds)
-eq(m.tiers, [
-  { tier: "liquid", value: 100, color: "#111111" },
-  { tier: "invest", value: 130, color: "#333333" }, // biggest kind's color
+assert.deepStrictEqual(m.tiers, [
+  { tier: "liquid", value: 100 },
+  { tier: "invest", value: 130 },
 ])
-eq([m.assets, m.debt], [230, 60])
-eq(liquidityMix(undefined, kinds), { tiers: [], assets: 0, debt: 0 })
-eq(
+assert.deepStrictEqual([m.assets, m.debt], [230, 60])
+assert.deepStrictEqual(liquidityMix(undefined, kinds), { tiers: [], assets: 0, debt: 0 })
+assert.deepStrictEqual(
   movers(row("2026-09-01", 0, { bank: 100, tw: 50, loan: -80 }), row("2026-10-01", 0, { bank: 90, tw: 80, loan: -60 }), kinds).map((x) => [x.kind.key, x.delta]),
   [["tw", 30], ["loan", 20], ["bank", -10]], // paying down the loan counts as +20
 )
-console.log("ok")
+assert.deepStrictEqual(inRange(rows, "2025-01-01", "2026-06-30").map((r) => r.date), ["2023-06-01", "2025-09-01", "2026-01-01"])
+assert.deepStrictEqual(inRange(rows, "2030-01-01", "2031-01-01").map((r) => r.date), ["2026-10-01"])
+assert.deepStrictEqual(inRange(rows, "2025-09-01", "2026-01-01").map((r) => r.date), ["2025-09-01", "2026-01-01"]) // a record on `from` itself
+// round ticks around the data, never the raw max (round 3: 1,025.2萬 / 1,014.4萬 / 999.4萬 …)
+assert.deepStrictEqual(niceTicks(9_844_000, 10_252_000), [9_800_000, 9_900_000, 10_000_000, 10_100_000, 10_200_000, 10_300_000])
+assert.deepStrictEqual(niceTicks(0, 1), [0, 0.2, 0.4, 0.6, 0.8, 1])
+assert.deepStrictEqual(niceTicks(-323_600, -310_000), [-325_000, -320_000, -315_000, -310_000])
+assert.deepStrictEqual(niceTicks(5, 5), [4.9, 4.95, 5, 5.05, 5.1])
+
+// the account behind the move, balances carried forward: the mortgage paid down 30 beats the bank's −10
+const acct = (id: number, kind: string, history: [string, number][]): Account => ({
+  id, name: `a${id}`, kind, currency: "TWD", archived: false, sort: id, note: "", amount: 0, fx: 1,
+  history: history.map(([date, value]) => ({ date, value, amount: value, fx: 1 })),
+})
+const accts = [acct(1, "bank", [["2026-01-01", 100], ["2026-09-01", 90]]), acct(2, "loan", [["2025-12-01", 500], ["2026-06-01", 470]])]
+const top = topAccount(accts, kinds, "2026-01-01", "2026-10-01")
+assert.deepStrictEqual([top?.account.id, top?.delta, top?.liability], [2, -30, true])
+assert.deepStrictEqual(topAccount(accts, kinds, "2026-10-01", "2026-10-01"), undefined)

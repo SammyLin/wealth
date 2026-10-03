@@ -1,16 +1,17 @@
 import { useState, type KeyboardEvent } from "react"
-import { ActionIcon, Button, Group, NumberInput, Table, Text, TextInput, Title, Tooltip, VisuallyHidden } from "@mantine/core"
-import { modals } from "@mantine/modals"
-import { notifications } from "@mantine/notifications"
-import { Check, Save, Trash2 } from "lucide-react"
+import { ActionIcon, Button, Group, Loader, Table, Text, TextInput, Title, Tooltip, VisuallyHidden } from "@mantine/core"
+import { Trash2 } from "lucide-react"
 import { useLedgerState, useMoney } from "../../api/useLedger"
 import type { Account, Point } from "../../api/types"
 import { T, t } from "../../i18n"
-import { fmtDate, fmtInput, parseAmount } from "../../lib/format"
+import { fmtDate, fmtInput, fxShown, parseAmount, parseFx } from "../../lib/format"
+import { askConfirm } from "../../shell/confirm"
+import { useDirty } from "../../shell/dirty"
+import { notifyUndo } from "../../shell/undo"
 
 const PAGE = 12
 
-/** Every recorded balance of one account, newest first; each row saves or deletes on its own. */
+/** Every recorded balance of one account, newest first; a row saves itself on Enter or when focus leaves it. */
 export function HistoryTable({ account }: { account: Account }) {
   const { state } = useLedgerState()
   const [all, setAll] = useState(false)
@@ -24,7 +25,7 @@ export function HistoryTable({ account }: { account: Account }) {
           {t("歷史紀錄")}
         </Title>
         <Text fz="xs" c="dimmed">
-          {T`${rows.length} 筆 · 改完按該列的儲存`}
+          {T`${rows.length} 筆 · 改完按 Enter 或離開該列就會儲存`}
         </Text>
       </Group>
       {rows.length === 0 ? (
@@ -37,8 +38,8 @@ export function HistoryTable({ account }: { account: Account }) {
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>{t("日期")}</Table.Th>
-                <Table.Th>{T`餘額(${account.currency})`}</Table.Th>
-                {foreign && <Table.Th>{t("匯率")}</Table.Th>}
+                <Table.Th ta="right">{T`餘額(${account.currency})`}</Table.Th>
+                {foreign && <Table.Th ta="right">{t("匯率")}</Table.Th>}
                 <Table.Th ta="right">{T`價值(${state.settings.base_currency})`}</Table.Th>
                 <Table.Th w={64}>
                   <VisuallyHidden>{t("動作")}</VisuallyHidden>
@@ -62,52 +63,64 @@ export function HistoryTable({ account }: { account: Account }) {
   )
 }
 
+// Same look as the record grid: right-aligned figures in the number font, at the table's text size.
+const NUM_INPUT = { input: { textAlign: "right", fontFamily: "var(--wealth-font-num)" } } as const
+
 function HistoryRow({ account, point, foreign }: { account: Account; point: Point; foreign: boolean }) {
   const { saveSnapshots, deleteSnapshot } = useLedgerState()
   const money = useMoney()
   const [amountText, setAmountText] = useState(fmtInput(point.amount))
-  const [fx, setFx] = useState<number | string>(point.fx)
+  // Rates at full precision, the same way as the record dialog: VND→USD 0.0000385 has 7 decimals.
+  const [fxText, setFxText] = useState(String(point.fx))
+  const [fxFocused, setFxFocused] = useState(false)
   const [saving, setSaving] = useState(false)
   const amount = parseAmount(amountText)
-  const rate = typeof fx === "number" ? fx : Number(fx)
+  const rate = parseFx(fxText)
   const valid = !Number.isNaN(amount) && rate > 0
   const dirty = valid && (amount !== point.amount || rate !== point.fx)
   const day = fmtDate(point.date)
+  // an edit being saved isn't "unsaved"; one that can't be saved (bad number) still guards the dialog's close
+  useDirty(!saving && (amountText !== fmtInput(point.amount) || fxText !== String(point.fx)))
 
   const save = async () => {
-    if (!dirty) return
+    if (!dirty || saving) return
     setSaving(true)
     try {
       await saveSnapshots([{ account_id: account.id, date: point.date, amount, fx: rate }])
-      notifications.show({ message: T`已更新 ${day} 的紀錄`, icon: <Check size={16} /> })
+      notifyUndo({
+        message: T`已更新 ${day} 的紀錄`,
+        undo: () => saveSnapshots([{ account_id: account.id, date: point.date, amount: point.amount, fx: point.fx }]),
+      })
     } catch {
       setSaving(false) // on success the row remounts with the saved values
     }
   }
 
   const remove = () =>
-    modals.openConfirmModal({
+    askConfirm({
       title: T`刪除 ${day} 這筆紀錄?`,
-      children: <Text fz="sm">{t("趨勢圖會改用前一筆餘額接續。")}</Text>,
-      labels: { confirm: t("刪除"), cancel: t("取消") },
-      confirmProps: { color: "red" },
-      onConfirm: () => deleteSnapshot(account.id, point.date).catch(() => {}),
+      body: t("趨勢圖會改用前一筆餘額接續。"),
+      confirm: t("刪除"),
+      danger: true,
+      onConfirm: () => void deleteSnapshot(account.id, point.date).catch(() => {}),
     })
 
   const onEnter = (e: KeyboardEvent) => {
-    if (e.key === "Enter") void save()
+    if (e.key === "Enter" && !e.nativeEvent.isComposing) void save()
   }
 
   return (
-    <Table.Tr>
+    // focus leaving the row (not moving between its own fields or to its delete button) saves it
+    <Table.Tr onBlur={(e) => !e.currentTarget.contains(e.relatedTarget as Node | null) && void save()}>
       <Table.Td className="num" style={{ whiteSpace: "nowrap" }}>
         <time dateTime={point.date}>{day}</time>
       </Table.Td>
       <Table.Td>
         <TextInput
-          size="xs"
+          size="sm"
           inputMode="decimal"
-          classNames={{ input: "num" }}
+          autoComplete="off"
+          styles={NUM_INPUT}
           aria-label={T`${day} 餘額`}
           value={amountText}
           error={Number.isNaN(amount) ? t("看不懂這個數字") : undefined}
@@ -118,19 +131,19 @@ function HistoryRow({ account, point, foreign }: { account: Account; point: Poin
       </Table.Td>
       {foreign && (
         <Table.Td>
-          <NumberInput
-            size="xs"
-            hideControls
-            min={0}
-            decimalScale={6}
-            thousandSeparator={false}
-            classNames={{ input: "num" }}
+          <TextInput
+            size="sm"
+            inputMode="decimal"
+            autoComplete="off"
+            styles={NUM_INPUT}
             aria-label={T`${day} 匯率`}
-            value={fx}
+            value={fxShown(fxText, fxFocused)}
             error={rate > 0 ? undefined : t("匯率要大於 0")}
-            onChange={setFx}
+            onChange={(e) => setFxText(e.currentTarget.value)}
+            onFocus={() => setFxFocused(true)}
+            onBlur={() => setFxFocused(false)}
             onKeyDown={onEnter}
-            miw={72}
+            miw={88}
           />
         </Table.Td>
       )}
@@ -138,14 +151,10 @@ function HistoryRow({ account, point, foreign }: { account: Account; point: Poin
         {valid ? money(amount * rate) : "—"}
       </Table.Td>
       <Table.Td>
-        <Group gap={0} wrap="nowrap">
-          <Tooltip label={t("儲存這列")}>
-            <ActionIcon color="gold" variant={dirty ? "light" : "subtle"} disabled={!dirty} loading={saving} aria-label={T`儲存 ${day} 這筆`} onClick={save}>
-              <Save size={16} />
-            </ActionIcon>
-          </Tooltip>
+        <Group gap={0} wrap="nowrap" justify="flex-end">
+          {saving && <Loader size={14} mx={6} aria-label={t("儲存中")} />}
           <Tooltip label={t("刪除這列")}>
-            <ActionIcon color="red" aria-label={T`刪除 ${day} 這筆`} onClick={remove}>
+            <ActionIcon color="down" aria-label={T`刪除 ${day} 這筆`} onClick={remove}>
               <Trash2 size={16} />
             </ActionIcon>
           </Tooltip>

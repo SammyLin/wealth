@@ -45,8 +45,9 @@ export function LayoutEditor() {
         {list.map((s, i) => (
           <Paper key={s.id} component="li" withBorder px="sm" py={8} radius="md" bg={s.hidden ? "var(--wealth-paper-2)" : undefined}>
             <Group gap="xs" wrap="nowrap">
-              <Text className="num" fs="italic" c="gold" fz="sm" w={22} aria-hidden>
-                {String(i + 1).padStart(2, "0")}
+              {/* the number the dashboard shows: hidden sections don't take one */}
+              <Text className="num" fs="italic" c={s.hidden ? "dimmed" : "gold"} fz="sm" w={22} aria-hidden>
+                {s.hidden ? "—" : String(list.slice(0, i + 1).filter((x) => !x.hidden).length).padStart(2, "0")}
               </Text>
               <Text flex={1} miw={0} truncate fz="sm" c={s.hidden ? "dimmed" : undefined} td={s.hidden ? "line-through" : undefined}>
                 {label(s.id)}

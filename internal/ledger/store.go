@@ -55,13 +55,6 @@ func kindExists(ctx context.Context, db *sql.DB, key string) (bool, error) {
 	return n > 0, err
 }
 
-// kindNameTaken: names must be unique (ignoring ASCII case) because charts and the UI label kinds by name.
-func kindNameTaken(ctx context.Context, db *sql.DB, name, exceptKey string) (bool, error) {
-	var n int
-	err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM account_kinds WHERE lower(name)=lower(?) AND key<>?`, name, exceptKey).Scan(&n)
-	return n > 0, err
-}
-
 func settings(ctx context.Context, db *sql.DB) (map[string]string, error) {
 	out := map[string]string{}
 	for k, v := range defaultSettings {

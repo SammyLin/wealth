@@ -30,6 +30,9 @@ export function t(zh: string): string {
   return lang === "en" && Object.hasOwn(EN, zh) ? EN[zh] : zh
 }
 
+/** The English for a Chinese key whatever the UI language (the CSV import matches class names in either). */
+export const enOf = (zh: string): string => (Object.hasOwn(EN, zh) ? EN[zh] : zh)
+
 const plural = new Intl.PluralRules("en")
 
 /** Fills "{}" holes in order; a list value is joined with the language's separator. */

@@ -79,4 +79,6 @@ export const en: Record<string, string> = {
   "新增": "Add",
   "已更新貸款「{}」": "Updated loan “{}”",
   "已新增貸款「{}」": "Added loan “{}”",
+  "每月月付": "Monthly payments",
+  "月份": "Month",
 }

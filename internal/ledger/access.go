@@ -39,6 +39,21 @@ func AccessGuard(team, aud string, client *http.Client) gin.HandlerFunc {
 	}
 }
 
+// AccessFromEnv picks the Worker's guard from its settings and fails closed: the Access JWT check when
+// ACCESS_TEAM_DOMAIN and ACCESS_AUD are set, an open door only when ALLOW_PUBLIC=1 says so, otherwise 503.
+func AccessFromEnv(getenv func(string) string, client *http.Client) gin.HandlerFunc {
+	team, aud := getenv("ACCESS_TEAM_DOMAIN"), getenv("ACCESS_AUD")
+	switch {
+	case team != "" && aud != "":
+		return AccessGuard(team, aud, client)
+	case getenv("ALLOW_PUBLIC") == "1":
+		return func(c *gin.Context) { c.Next() }
+	}
+	return func(c *gin.Context) {
+		c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "Set ACCESS_TEAM_DOMAIN and ACCESS_AUD (Cloudflare Access), or ALLOW_PUBLIC=1."})
+	}
+}
+
 type jwks struct {
 	url     string
 	client  *http.Client

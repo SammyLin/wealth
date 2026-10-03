@@ -92,7 +92,7 @@ export function ThisMonth({ loans, schedule, accounts, today }: Props) {
             <Text fz="sm">{T`${fmtDate(next.month)} 起每月 ${money(monthTotal(next))}`}</Text>
             <Badge
               variant="outline"
-              color={delta > 0 ? "var(--wealth-down)" : "var(--wealth-up)"}
+              color={delta > 0 ? "down" : "up"}
               leftSection={delta > 0 ? <TrendingUp size={12} aria-hidden /> : <TrendingDown size={12} aria-hidden />}
             >
               {money(delta, { signed: true })}

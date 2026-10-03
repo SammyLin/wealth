@@ -66,8 +66,17 @@ func (l Loan) Balance(m time.Time) float64 {
 	return l.Principal * (math.Pow(1+r, float64(n)) - math.Pow(1+r, float64(k))) / (math.Pow(1+r, float64(n)) - 1)
 }
 
+// addMonths moves t by n calendar months, keeping the day but clamping it to the target month's last day:
+// Aug 31 + 6 = Feb 28, not time.AddDate's Mar 3. web/src/features/loans/math.ts addMonths matches it
+// (testdata/loans.json "add_months").
+func addMonths(t time.Time, n int) time.Time {
+	first := time.Date(t.Year(), t.Month()+time.Month(n), 1, 0, 0, 0, 0, time.UTC)
+	last := first.AddDate(0, 1, -1).Day()
+	return first.AddDate(0, 0, min(t.Day(), last)-1)
+}
+
 // GraceEnd is the date the interest-only period ends (start + grace months).
-func (l Loan) GraceEnd() string { return l.start().AddDate(0, l.GraceMonths, 0).Format("2006-01-02") }
+func (l Loan) GraceEnd() string { return addMonths(l.start(), l.GraceMonths).Format("2006-01-02") }
 
 type LoanView struct {
 	Loan
@@ -103,7 +112,7 @@ func loanViews(loans []Loan, now time.Time) ([]LoanView, []MonthPay) {
 	}
 	var ok []Loan
 	for _, l := range loans {
-		end := l.start().AddDate(0, l.TotalMonths, 0)
+		end := addMonths(l.start(), l.TotalMonths)
 		views = append(views, LoanView{l, l.GraceEnd(), fin(l.Payment(now)), fin(l.Principal * l.Rate / 12), fin(l.levelPayment()), fin(l.Balance(now)), end.Format("2006-01-02")})
 		if validLoan(l) == "" {
 			ok = append(ok, l)
@@ -115,7 +124,7 @@ func loanViews(loans []Loan, now time.Time) ([]LoanView, []MonthPay) {
 	}
 	first, last := loans[0].start(), loans[0].start()
 	for _, l := range loans {
-		end := l.start().AddDate(0, l.TotalMonths, 0)
+		end := addMonths(l.start(), l.TotalMonths)
 		if l.start().Before(first) {
 			first = l.start()
 		}

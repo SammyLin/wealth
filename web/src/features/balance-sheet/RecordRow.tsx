@@ -1,8 +1,9 @@
+import { useState } from "react"
 import { Grid, Group, Loader, Text, TextInput } from "@mantine/core"
 import type { Account, Kind } from "../../api/types"
 import { useMoney } from "../../api/useLedger"
 import { T, t } from "../../i18n"
-import { fmtDate } from "../../lib/format"
+import { fmtDate, fxShown } from "../../lib/format"
 import { KindBadge } from "./AccountRow"
 import { asOf, type Draft, type Parsed } from "./sheet"
 
@@ -15,17 +16,21 @@ type Props = {
   parsed: Parsed
   fxLoading: boolean
   initialFocus?: boolean
+  /** Not updated for 90+ days: the hint says so, matching the hero's nudge that opened this dialog. */
+  stale?: boolean
   amountRef: (el: HTMLInputElement | null) => void
   fxRef: (el: HTMLInputElement | null) => void
   onChange: (patch: Partial<Draft>) => void
   onPasteMany: (values: string[]) => void
   onAmountBlur: () => void
+  /** Enter in either field: on to the next row's amount, or submit from the last one. */
   onEnter: () => void
-  onFxEnter: () => void
 }
 
-export function RecordRow({ account: a, kind, base, date, draft, parsed, fxLoading, initialFocus, amountRef, fxRef, onChange, onPasteMany, onAmountBlur, onEnter, onFxEnter }: Props) {
+export function RecordRow({ account: a, kind, base, date, draft, parsed, fxLoading, initialFocus, stale, amountRef, fxRef, onChange, onPasteMany, onAmountBlur, onEnter }: Props) {
   const money = useMoney()
+  // the rate shows 6 significant digits so it fits the field on a phone; focused, the full precision is editable
+  const [fxFocused, setFxFocused] = useState(false)
   const foreign = a.currency !== base
   const { point: last, exact } = asOf(a, date) // relative to the chosen day, not the latest record
   const delta = parsed.kind === "ok" ? parsed.delta : 0
@@ -35,8 +40,8 @@ export function RecordRow({ account: a, kind, base, date, draft, parsed, fxLoadi
         {T`淨資產 ${money(delta, { signed: true })}`}
       </Text>
     ) : (
-      <Text fz="xs" c="dimmed" className="num" truncate>
-        {exact ? t("這天已有紀錄") : last ? T`上次 ${fmtDate(last.date)}` : t("尚未記錄")}
+      <Text fz="xs" c={stale && !exact ? "warn" : "dimmed"} className="num" truncate>
+        {exact ? t("這天已有紀錄") : last ? (stale ? T`上次 ${fmtDate(last.date)} · 超過 90 天` : T`上次 ${fmtDate(last.date)}`) : t("尚未記錄")}
       </Text>
     )
 
@@ -79,7 +84,7 @@ export function RecordRow({ account: a, kind, base, date, draft, parsed, fxLoadi
           inputMode="decimal"
           autoComplete="off"
           enterKeyHint="next"
-          placeholder={last ? t("沿用上一筆") : t("尚未記錄")}
+          placeholder={last ? t("沿用上一筆") : undefined /* the hint above already says "not recorded yet" */}
           aria-label={T`${a.name} 餘額(${a.currency})`}
           error={parsed.kind === "error" && parsed.field === "amt" ? t("看不懂這個數字") : undefined}
           rightSection={
@@ -95,12 +100,18 @@ export function RecordRow({ account: a, kind, base, date, draft, parsed, fxLoadi
         <Grid.Col span={{ base: 5, sm: 3 }}>
           <TextInput
             ref={fxRef}
-            value={draft.fx}
+            value={fxShown(draft.fx, fxFocused)}
             onChange={(e) => onChange({ fx: e.currentTarget.value })}
+            onFocus={(e) => {
+              setFxFocused(true)
+              const el = e.currentTarget
+              requestAnimationFrame(() => el.select()) // after the full-precision text has replaced the rounded one
+            }}
+            onBlur={() => setFxFocused(false)}
             onKeyDown={(e) => {
               if (e.key !== "Enter" || e.nativeEvent.isComposing) return
               e.preventDefault()
-              onFxEnter()
+              onEnter()
             }}
             inputMode="decimal"
             autoComplete="off"

@@ -3,8 +3,9 @@ import { Box, Group, Paper, Stack, Text } from "@mantine/core"
 import { BarChart } from "@mantine/charts"
 import type { LoanView, Sched } from "../../api/types"
 import { useMoney } from "../../api/useLedger"
-import { T, t } from "../../i18n"
-import { fmtDate } from "../../lib/format"
+import { T, t, useLang } from "../../i18n"
+import { fmtDate, fmtMoney } from "../../lib/format"
+import { ChartTable } from "../../shell/ChartTable"
 import { loanColor, monthTotal } from "./math"
 
 type Props = { loans: LoanView[]; schedule: Sched[]; today: string }
@@ -12,6 +13,7 @@ type Props = { loans: LoanView[]; schedule: Sched[]; today: string }
 /** Monthly payment from the first payment to payoff, stacked by loan, with a marker at this month. */
 export function PaymentChart({ loans, schedule, today }: Props) {
   const money = useMoney()
+  const { lang } = useLang()
   const month = today.slice(0, 7)
 
   const { data, series, ticks } = useMemo(() => {
@@ -39,28 +41,36 @@ export function PaymentChart({ loans, schedule, today }: Props) {
   )}`
 
   return (
-    <Box role="img" aria-label={summary}>
-      <BarChart
-        h={260}
-        data={data}
-        dataKey="month"
-        series={series}
-        type="stacked"
-        gridAxis="x"
-        tickLine="none"
-        valueFormatter={(v) => money(v)}
-        // no per-bar keyboard layer: hundreds of unnamed bars would bury the summary in the aria-label above
-        barChartProps={{ barCategoryGap: 0, accessibilityLayer: false }}
-        // Same-color stroke closes the hairline seams between adjacent month bars.
-        barProps={(s) => ({ isAnimationActive: false, stroke: s.color, strokeOpacity: 1, strokeWidth: 0.5 })}
-        xAxisProps={{ ticks, interval: 0, tickFormatter: (m: string) => m.slice(0, 4) }}
-        yAxisProps={{ width: 56 }}
-        referenceLines={inRange ? [{ x: month, color: "var(--mantine-color-text)", label: t("今天"), labelPosition: "insideTopLeft" }] : []}
-        tooltipProps={{
-          content: ({ label, payload }) => <Tip month={String(label ?? "")} payload={payload} series={series} money={money} />,
-        }}
+    <>
+      <Box role="img" aria-label={summary}>
+        <BarChart
+          h={260}
+          data={data}
+          dataKey="month"
+          series={series}
+          type="stacked"
+          gridAxis="x"
+          tickLine="none"
+          valueFormatter={(v) => money(v)}
+          // no per-bar keyboard layer: hundreds of unnamed bars would bury the summary in the aria-label above
+          barChartProps={{ barCategoryGap: 0, accessibilityLayer: false }}
+          // Same-color stroke closes the hairline seams between adjacent month bars.
+          barProps={(s) => ({ isAnimationActive: false, stroke: s.color, strokeOpacity: 1, strokeWidth: 0.5 })}
+          xAxisProps={{ ticks, interval: 0, tickFormatter: (m: string) => m.slice(0, 4) }}
+          yAxisProps={{ width: 56 }}
+          referenceLines={inRange ? [{ x: month, color: "var(--mantine-color-text)", label: t("今天"), labelPosition: "insideTopLeft" }] : []}
+          tooltipProps={{
+            content: ({ label, payload }) => <Tip month={String(label ?? "")} payload={payload} series={series} money={money} />,
+          }}
+        />
+      </Box>
+      <ChartTable
+        caption={t("每月月付")}
+        head={[t("月份"), ...loans.map((l) => l.name), t("合計")]}
+        // every digit, as the bank debits it
+      rows={() => schedule.map((r) => [fmtDate(r.month), ...loans.map((l) => fmtMoney(Math.round(r.by[l.id] ?? 0), "full", lang)), fmtMoney(monthTotal(r), "full", lang)])}
       />
-    </Box>
+    </>
   )
 }
 

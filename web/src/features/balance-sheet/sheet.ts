@@ -1,16 +1,15 @@
 import type { Account, Kind, Liquidity, Point } from "../../api/types.ts"
-import { fmtInput, parseAmount, parseFx } from "../../lib/format.ts"
-
-export { fmtInput }
+import { fmtInput, parseAmount, parseFx, toIso, toMs } from "../../lib/format.ts"
+import { LIQUIDITY } from "../../lib/liquidity.ts"
 
 // Pure balance-sheet math, shared by the section and the record dialog. Self-check: sheet.check.ts.
 
-/** Asset tiers in balance-sheet order (how fast each turns into cash). Labels are Chinese; render with t(). */
-export const TIERS: { id: Exclude<Liquidity, "liability">; label: string }[] = [
-  { id: "liquid", label: "流動資產" },
-  { id: "invest", label: "投資資產" },
-  { id: "fixed", label: "自用資產" },
-]
+const TIERS = LIQUIDITY.filter((x) => x.value !== "liability")
+
+const STALE_DAYS = 90
+/** An active account whose last record is over STALE_DAYS before `today`: its old balance is still being carried. */
+export const isStale = (a: Account, today: string) =>
+  !a.archived && a.history.length > 0 && a.history[a.history.length - 1].date < toIso(toMs(today) - STALE_DAYS * 864e5)
 
 export type Group = { id: Liquidity; label: string; accounts: Account[]; total: number }
 
@@ -33,7 +32,7 @@ export function buildSheet(accounts: Account[], kinds: Kind[], showArchived: boo
     const list = accounts.filter((a) => liq(a) === id && (showArchived || !hideable(a)))
     return { id, label, accounts: list, total: list.reduce((s, a) => s + valueOf(a), 0) }
   }
-  const tiers = TIERS.map((x) => group(x.id, x.label)).filter((g) => g.accounts.length)
+  const tiers = TIERS.map((x) => group(x.value, x.label)).filter((g) => g.accounts.length)
   const liabilities = group("liability", "負債")
   const assets = tiers.reduce((s, g) => s + g.total, 0)
   return { tiers, liabilities, assets, debt: liabilities.total, net: assets - liabilities.total, hiddenArchived: accounts.filter(hideable).length }
@@ -47,8 +46,8 @@ export function asOf(a: Account, date: string): { point?: Point; exact: boolean 
   return { point, exact: point?.date === date }
 }
 
-/** `touched` = the user typed in this row (amount or rate). Prefilled values alone are never saved. */
-export type Draft = { amt: string; fx: string; touched?: boolean }
+/** `touched` = the user typed in this row (amount or rate), `fxTyped` = in its rate. Prefilled values alone are never saved. */
+export type Draft = { amt: string; fx: string; touched?: boolean; fxTyped?: boolean }
 export type Parsed =
   | { kind: "empty" }
   | { kind: "error"; field: "amt" | "fx" }

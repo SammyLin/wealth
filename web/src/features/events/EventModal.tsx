@@ -9,6 +9,7 @@ import type { Event } from "../../api/types"
 import { useLedger } from "../../api/useLedger"
 import { t, useLang } from "../../i18n"
 import { todayISO } from "../../lib/format"
+import { DirtyContext, useDirty, useGuardedClose } from "../../shell/dirty"
 
 type Props = { opened: boolean; onClose: () => void; event?: Event | null }
 
@@ -16,15 +17,20 @@ type Props = { opened: boolean; onClose: () => void; event?: Event | null }
 export function EventModal({ opened, onClose, event }: Props) {
   const theme = useMantineTheme()
   const mobile = useMediaQuery(`(max-width: ${theme.breakpoints.sm})`)
+  const { dirty, close } = useGuardedClose(onClose) // a typed title isn't dropped by Esc or a stray backdrop click
   return (
-    <Modal opened={opened} onClose={onClose} fullScreen={mobile} title={t(event ? "編輯大事" : "新增大事")}>
+    <Modal opened={opened} onClose={close} fullScreen={mobile} title={t(event ? "編輯大事" : "新增大事")}>
       {/* Modal unmounts its body after closing, so the form starts fresh from `event` on every open. */}
-      <EventForm event={event} onDone={onClose} mobile={!!mobile} />
+      <DirtyContext.Provider value={dirty}>
+        <EventForm event={event} onDone={onClose} onCancel={close} mobile={!!mobile} />
+      </DirtyContext.Provider>
     </Modal>
   )
 }
 
-function EventForm({ event, onDone, mobile }: { event?: Event | null; onDone: () => void; mobile: boolean }) {
+type FormProps = { event?: Event | null; onDone: () => void; onCancel: () => void; mobile: boolean }
+
+function EventForm({ event, onDone, onCancel, mobile }: FormProps) {
   const { saveEvent } = useLedger()
   const { lang } = useLang()
   const [saving, setSaving] = useState(false)
@@ -35,12 +41,13 @@ function EventForm({ event, onDone, mobile }: { event?: Event | null; onDone: ()
       title: (v) => (v.trim() ? null : t("請輸入事件名稱")),
     },
   })
+  useDirty(form.isDirty())
 
   const submit = form.onSubmit(async ({ date, title }) => {
     setSaving(true)
     try {
       await saveEvent({ id: event?.id, date, title: title.trim() })
-      notifications.show({ color: "teal", icon: <Check size={16} />, message: t(event ? "已更新" : "已加到大事記") })
+      notifications.show({ color: "up", icon: <Check size={16} />, message: t(event ? "已更新" : "已加到大事記") })
       onDone()
     } catch {
       /* useLedger already showed the error; stay open so nothing typed is lost */
@@ -72,7 +79,7 @@ function EventForm({ event, onDone, mobile }: { event?: Event | null; onDone: ()
           {...form.getInputProps("title")}
         />
         <Group justify="flex-end" gap="sm" mt="sm">
-          <Button variant="default" onClick={onDone}>
+          <Button variant="default" onClick={onCancel}>
             {t("取消")}
           </Button>
           <Button type="submit" loading={saving} leftSection={<Flag size={16} />}>

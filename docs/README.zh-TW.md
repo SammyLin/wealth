@@ -44,27 +44,38 @@ wealth 只做這件事。每個帳戶(銀行、證券、房子、房貸)偶爾�
 | **全部可改** | 帳本名稱、帳戶、過去每筆餘額、貸款、大事都能編輯或刪除 |
 | **自訂版面** | 首頁區塊可排序、隱藏;淺色/深色/跟隨系統 |
 | **中英雙語** | 介面跟著瀏覽器語言,右上角隨時切換 |
-| **匯入與匯出** | 從 CSV 匯入餘額;匯出試算表 CSV,或可以直接匯回來的明細 CSV;自架版另有完整 `.db` 下載與每日自動備份 |
+| **匯入與匯出** | 從 CSV 匯入餘額,先由伺服器檢查並預覽,沒有的帳戶一起建立(可加 `kind`、`currency` 欄);匯出試算表 CSV,或可以直接匯回來的明細 CSV;自架版另有完整 `.db` 下載與每日自動備份 |
 
 ## 快速開始
 
-**Docker**(不用另外裝任何東西):
+**Docker:**
 
 ```sh
 git clone https://github.com/SammyLin/wealth.git
 cd wealth
 cp .env.example .env          # 設定 WEALTH_PASS
-docker compose up -d          # http://127.0.0.1:8080,帳號 me
+docker compose up -d --build  # http://127.0.0.1:8080,帳號 me
 ```
 
-**從原始碼**需要 Go 1.26+ 和 Node 20+(前端是 Vite 專案,建置後編進 Go 執行檔):
+`--build` 用你這份程式碼建置映像檔,一定能跑。第一個版本(v2.0.0)發布後,直接 `docker compose up -d` 就會拉已發布的映像檔(`ghcr.io/sammylin/wealth`,amd64 和 arm64,由 `.github/workflows/release.yml` 建置);在那之前拉不到,compose 會改成自己建置。
+
+**單一執行檔**:第一個版本發布後,到 [Releases](https://github.com/SammyLin/wealth/releases) 下載(Linux、macOS,amd64、arm64;前端已經包在裡面):
+
+```sh
+curl -L https://github.com/SammyLin/wealth/releases/latest/download/wealth-linux-amd64.tar.gz | tar xz
+./wealth-linux-amd64/wealth   # http://127.0.0.1:8080,資料存在 ./wealth.db
+```
+
+**從原始碼**需要 Go 1.26+ 和 Node 22.18+(前端是 Vite 專案,建置後編進 Go 執行檔):
 
 ```sh
 git clone https://github.com/SammyLin/wealth.git
 cd wealth
 make run                      # 建置 web/,再開 http://127.0.0.1:8080,資料存在 ./wealth.db
-make seed                     # 選用,在另一個終端機跑:塞一份示範資料
+make seed                     # 選用,在另一個終端機跑:塞一份示範資料(有設密碼就加 WEALTH_PASS=…)
 ```
+
+只想要 `./wealth` 執行檔:`cd web && npm ci && npm run build && cd .. && CGO_ENABLED=0 go build -o wealth ./cmd/wealth`。
 
 剛 clone 下來直接 `go run ./cmd/wealth` 也能跑(API 正常,首頁會說明怎麼建置前端)。
 
@@ -73,7 +84,7 @@ make seed                     # 選用,在另一個終端機跑:塞一份示範�
 接著:
 
 1. 第一個畫面先選**基準幣別**和**金額單位**(記下第一筆餘額後基準幣別就不能改)
-2. **新增帳戶**:名稱、類別(銀行/台股/美股/加密貨幣/動產/不動產/負債,或自己新增)、幣別
+2. **新增帳戶**:名稱、類別(銀行/台股/美股/加密貨幣/動產/不動產/負債,或自己新增)、幣別。原本用試算表記?用**從 CSV 匯入**,沒有的帳戶會一起建立。只是想先看看?**載入範例帳本**會在空帳本裡放一個範例家庭
 3. **記一筆**:填各帳戶目前餘額,外幣匯率自動帶入
 4. 之後每隔一陣子再「記一筆」,改有變動的帳戶就好
 
@@ -83,11 +94,11 @@ make seed                     # 選用,在另一個終端機跑:塞一份示範�
 
 ```sh
 cp .env.example .env && $EDITOR .env   # 設定 WEALTH_PASS
-docker compose up -d                  # 第一次會先建置映像檔
+docker compose up -d                  # 拉 ghcr.io/sammylin/wealth:latest(第一個版本發布後;在那之前加 --build)
 ```
 
 ```sh
-WEALTH_PASS=secret WEALTH_ADDR=:8080 ./wealth   # 對外開放時必須設密碼(basic auth)
+WEALTH_PASS=secret ./wealth           # ./wealth 來自 Releases 或 go build(見快速開始)
 ```
 
 | 環境變數 | 預設 | 說明 |
@@ -100,7 +111,21 @@ WEALTH_PASS=secret WEALTH_ADDR=:8080 ./wealth   # 對外開放時必須設密碼
 
 **改用掛載資料夾而不是 volume:** 容器以 uid 10001 執行,資料夾要讓它寫得進去:`mkdir data && sudo chown 10001 data`,再把 `compose.yaml` 改成 `- ./data:/data`。
 
-**放在反向代理後面:** 瀏覽器送來的 `Origin` 和伺服器看到的主機不同時會拒絕寫入,所以代理要把原本的主機轉送過來。nginx 的 `proxy_pass` 預設送的是上游位址,請加 `proxy_set_header Host $host;`(或 `X-Forwarded-Host`,伺服器也認)。Caddy(`reverse_proxy 127.0.0.1:8080`)和 Traefik 預設就會保留主機。
+**放在反向代理後面(本機以外都該這樣用):** wealth 本身只講純 HTTP,basic auth 走純 HTTP 等於明碼送出密碼。要從手機或別台電腦連,請讓它留在 `127.0.0.1`,由代理處理 TLS。用 [Caddy](https://caddyserver.com) 的話會自動申請憑證,整份設定只有:
+
+```
+wealth.example.com {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+瀏覽器送來的 `Origin` 和伺服器看到的主機不同時會拒絕寫入,所以代理要把原本的主機轉送過來。Caddy 和 Traefik 預設就會保留;nginx 的 `proxy_pass` 預設送的是上游位址,請加 `proxy_set_header Host $host;`(或 `X-Forwarded-Host`,伺服器也認)。
+
+**字型:** 介面從 Google Fonts 載入 Fraunces、從 font.emtech.cc 載入源流明體與 MiSans,這是它唯一的第三方請求。字型是選用的:被擋掉或移除時會改用系統字型。想自己放字型,把 CSS 和字型檔下載下來,建置前把 `web/public/boot.js` 裡的網址改指向你的檔案,並調整 CSP(`internal/ledger/router.go`)的 `style-src`、`font-src`。
+
+**安全強化:** 每個回應都帶 CSP,只允許同一來源的 script。basic auth 密碼錯誤時會等一秒才回 401,而且一次只處理一個錯誤嘗試,猜密碼會很慢;要依 IP 鎖定,請用反向代理的流量限制(或拿它的 log 給 fail2ban)。
+
+**基準幣別選錯了?** 記下第一筆餘額後就鎖定,因為存下來的匯率都是換算成它。要換:在「設定」匯出可以匯回來的明細 CSV(含每個帳戶的類別和幣別),開一個空帳本(換一個 `WEALTH_DB`,或新的 volume),選好新的基準幣別,把 `fx` 欄清空後匯入,匯率就會對新的基準幣別重新查(每個檔案最多 30 組幣別和日期,2024-03-02 起才有資料;太多就分批,更早的日期自己填 `fx`)。
 
 `GET /healthz` 不需要帳密,回 `ok`,給容器健康檢查用。
 
@@ -125,12 +150,13 @@ sqlite3 wealth.db ".backup wealth-$(date +%F).db"
 
 | 檔案 | 內容 |
 |---|---|
-| `cmd/wealth/server.go` | 自架入口:SQLite、gzip、basic auth |
+| `cmd/wealth/server.go` | 自架入口:SQLite、gzip、basic auth(猜錯會變慢)、主機名稱檢查 |
 | `cmd/wealth/worker.go` | Workers 入口:D1、Access 驗證 |
-| `internal/ledger/router.go` | 所有 API 路由與寫入防護(兩種部署共用) |
-| `internal/ledger/import.go` | CSV 餘額匯入 |
+| `internal/ledger/router.go` | 路由表、寫入防護(CSRF、內容大小)、安全標頭(CSP)、共用的新增/修改流程(兩種部署共用) |
+| `internal/ledger/{state,settings,accounts,kinds,snapshots,events,loans}.go` | 每種資源一個檔案的 API |
+| `internal/ledger/import.go` | CSV 餘額匯入(同一個請求裡建立它提到的新帳戶),以及介面預覽用的 `?dry_run=1` |
 | `internal/ledger/model.go` | 資料型別、各日期淨值序列、輸入檢查 |
-| `internal/ledger/store.go` | 設定與貸款的資料庫讀取 |
+| `internal/ledger/store.go` | 共用的查詢:設定、類別、貸款 |
 | `internal/ledger/fx.go` | 匯率查詢 |
 | `internal/ledger/loan.go` | 寬限期只繳息 → 本息平均攤還的月付與餘額計算 |
 | `internal/ledger/access.go` | Cloudflare Access JWT 驗證 |
@@ -141,6 +167,7 @@ sqlite3 wealth.db ".backup wealth-$(date +%F).db"
 | `migrations/` | 資料表(兩種部署共用);`0002_kinds_layout.sql` 加入自訂類別、帳戶排序與備註 |
 | `web/` | 前端:Vite + React + TypeScript + [Mantine](https://mantine.dev),`web/src/features/` 下一個功能一個資料夾(見 [web/README.md](../web/README.md)) |
 | `Dockerfile`、`compose.yaml` | 自架映像檔(Node 建置 → Go 建置 → 精簡 Alpine 執行) |
+| `.github/workflows/` | `test.yml` 每次 push 都跑(gofmt、vet、staticcheck、測試、前端檢查、Docker 冒煙測試);`release.yml` 在打 `v*` tag 時先跑它,再發布執行檔和 ghcr.io 映像檔(`-rc` 這類 tag 是預先發行版) |
 
 ## 參與
 

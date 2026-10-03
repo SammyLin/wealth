@@ -1,37 +1,38 @@
 import { useMemo, useState } from "react"
-import { Button, EmptyState, Grid, Group, Skeleton, Text } from "@mantine/core"
+import { Button, Chip, EmptyState, Grid, Group, SegmentedControl, Text } from "@mantine/core"
 import { ChartArea, PenLine } from "lucide-react"
-import { useLedger } from "../../api/useLedger"
+import { useLedgerState } from "../../api/useLedger"
 import { t, T } from "../../i18n"
 import { fmtDate } from "../../lib/format"
 import { useOpenDialog } from "../../shell/dialogs"
 import { SectionCard } from "../../shell/SectionCard"
+import { useTrendRange } from "../overview/range"
 import { KindChips } from "./KindChips"
 import { MixDonut } from "./MixDonut"
 import { StackChart } from "./StackChart"
 
-/** Stacked area of asset kinds over time, a kind filter (chips double as the legend) and the latest mix. */
+/**
+ * Stacked area of asset kinds over the trend's range (its preset, custom range or zoom), a kind filter (chips
+ * double as the legend), amounts or shares, an "exclude personal-use" switch (a home can be 80% of the stack)
+ * and the latest mix.
+ */
 export function Composition() {
-  const { state } = useLedger()
+  const { state } = useLedgerState()
   const open = useOpenDialog()
+  const { shown: rows, label } = useTrendRange()
   const [picked, setPicked] = useState<string[]>([]) // empty = every kind
+  const [percent, setPercent] = useState(false)
+  const [noFixed, setNoFixed] = useState(false)
 
   // Asset kinds (not liabilities) that ever held a value, in the user's kind order.
   const kinds = useMemo(
-    () => (state?.kinds ?? []).filter((k) => k.liquidity !== "liability" && state?.series.some((r) => r.by_kind[k.key])),
-    [state],
+    () => state.kinds.filter((k) => k.liquidity !== "liability" && (!noFixed || k.liquidity !== "fixed") && state.series.some((r) => r.by_kind[k.key])),
+    [state, noFixed],
   )
   const shown = useMemo(() => (picked.length ? kinds.filter((k) => picked.includes(k.key)) : kinds), [kinds, picked])
+  const hasFixed = state.kinds.some((k) => k.liquidity === "fixed" && state.series.some((r) => r.by_kind[k.key]))
 
-  if (!state)
-    return (
-      <SectionCard title={t("資產組成")}>
-        <Skeleton h={{ base: 220, sm: 300 }} aria-label={t("載入中…")} />
-      </SectionCard>
-    )
-
-  const rows = state.series
-  if (!kinds.length)
+  if (!kinds.length && !noFixed)
     return (
       <SectionCard title={t("資產組成")}>
         <EmptyState
@@ -51,20 +52,37 @@ export function Composition() {
       </SectionCard>
     )
 
-  const last = rows[rows.length - 1]
+  const last = rows[rows.length - 1] ?? state.series[state.series.length - 1]
   return (
     <SectionCard
       title={t("資產組成")}
-      description={T`各類資產疊起來的高度,截至 ${fmtDate(last.date)}。點類別只看那幾類,可複選。`}
-      actions={<KindChips kinds={kinds} value={picked} onChange={setPicked} />}
+      description={T`各類資產疊起來的高度(${label}),截至 ${fmtDate(last.date)}。點類別只看那幾類,可複選。`}
+      actions={<KindChips kinds={kinds} value={picked.filter((k) => kinds.some((x) => x.key === k))} onChange={setPicked} />}
     >
+      <Group gap="sm" mb="md" wrap="wrap">
+        <SegmentedControl
+          size="xs"
+          aria-label={t("顯示方式")}
+          value={percent ? "percent" : "amount"}
+          onChange={(v) => setPercent(v === "percent")}
+          data={[
+            { value: "amount", label: t("金額") },
+            { value: "percent", label: t("比例") },
+          ]}
+        />
+        {hasFixed && (
+          <Chip size="xs" checked={noFixed} onChange={setNoFixed}>
+            {t("不含自用資產")}
+          </Chip>
+        )}
+      </Group>
       <Grid gap="xl" align="center">
         <Grid.Col span={{ base: 12, md: 8 }}>
-          {rows.length > 1 ? (
-            <StackChart rows={rows} kinds={shown} />
+          {rows.length > 1 && shown.length ? (
+            <StackChart rows={rows} kinds={shown} percent={percent} />
           ) : (
             <Text c="dimmed" fz="sm" ta="center" py="xl">
-              {t("再記一筆不同日期的餘額,就能看到各類資產的變化。")}
+              {shown.length ? t("再記一筆不同日期的餘額,就能看到各類資產的變化。") : t("這幾類都沒有紀錄。")}
             </Text>
           )}
         </Grid.Col>

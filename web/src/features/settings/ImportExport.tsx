@@ -22,7 +22,7 @@ export function ImportExport() {
         <Download
           icon={<ListOrdered size={18} />}
           title={t("餘額明細 CSV")}
-          description={t("每筆餘額一列(date,account,amount,fx),跟匯入的格式相同,可以直接匯回來。")}
+          description={t("每筆餘額一列(date,account,amount,fx,kind,currency),跟匯入的格式相同,可以直接匯回來。")}
           href={EXPORT_LONG_URL}
         />
         {state.file_backups && (

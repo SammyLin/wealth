@@ -6,10 +6,33 @@ import (
 	"database/sql"
 	"encoding/csv"
 	"fmt"
+	"net/http"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/gin-gonic/gin"
 )
+
+// export is GET /api/export.csv: ?layout=long is the date,account,amount,fx layout POST /api/import reads back;
+// otherwise the wide spreadsheet layout, labelled in English with ?lang=en.
+func (h *api) export(c *gin.Context) {
+	var b []byte
+	var err error
+	name := "wealth"
+	if c.Query("layout") == "long" {
+		b, err = exportLong(c.Request.Context(), h.db)
+		name = "wealth-balances"
+	} else {
+		b, err = exportCSV(c.Request.Context(), h.db, c.Query("lang") == "en")
+	}
+	if fail(c, err) {
+		return
+	}
+	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-%s.csv"`, name, time.Now().Format("2006-01-02")))
+	c.Data(http.StatusOK, "text/csv; charset=utf-8", b)
+}
 
 // escapeCell stops a spreadsheet from running a cell as a formula (CSV injection): a leading = + - @
 // gets a ' in front, which Excel shows as plain text. unescapeCell undoes it on import. A leading '
@@ -36,19 +59,24 @@ var exportLabels = map[bool]map[string]string{
 	true:  {"account": "Account", "kind": "Class", "currency": "Currency", "archived": "Archived", "yes": "yes", "fx": "Rate %s (to %s)", "subtotal": "Subtotal %s (%s)", "net": "Net worth (%s)"},
 }
 
-// exportLong writes date,account,amount,fx: the layout POST /api/import reads, so an export re-imports as is.
+// seededKindEn names migration 0002's kinds in English (the same words as the UI's i18n/en.ts), for ?lang=en.
+// A kind the user renamed keeps its own name.
+var seededKindEn = map[string]string{"銀行": "Bank", "台股": "TW stocks", "美股": "US stocks", "加密貨幣": "Crypto", "動產": "Personal property", "不動產": "Real estate", "負債": "Liabilities"}
+
+// exportLong writes date,account,amount,fx,kind,currency: the layout POST /api/import reads, so an export
+// re-imports as is, and into an empty ledger the kind and currency columns preset each account it creates.
 func exportLong(ctx context.Context, db *sql.DB) ([]byte, error) {
 	var buf bytes.Buffer
 	buf.WriteString("\xef\xbb\xbf")
 	w := csv.NewWriter(&buf)
-	w.Write([]string{"date", "account", "amount", "fx"})
-	err := queryEach(ctx, db, `SELECT s.date, a.name, s.amount, s.fx FROM snapshots s JOIN accounts a ON a.id = s.account_id ORDER BY s.date, a.sort, a.id`, func(r *sql.Rows) error {
-		var date, name string
+	w.Write([]string{"date", "account", "amount", "fx", "kind", "currency"})
+	err := queryEach(ctx, db, `SELECT s.date, a.name, s.amount, s.fx, a.kind, a.currency FROM snapshots s JOIN accounts a ON a.id = s.account_id ORDER BY s.date, a.sort, a.id`, func(r *sql.Rows) error {
+		var date, name, kind, cur string
 		var amount, fx float64
-		if err := r.Scan(&date, &name, &amount, &fx); err != nil {
+		if err := r.Scan(&date, &name, &amount, &fx, &kind, &cur); err != nil {
 			return err
 		}
-		return w.Write([]string{date, escapeCell(name), strconv.FormatFloat(amount, 'f', -1, 64), strconv.FormatFloat(fx, 'f', -1, 64)})
+		return w.Write([]string{date, escapeCell(name), strconv.FormatFloat(amount, 'f', -1, 64), strconv.FormatFloat(fx, 'f', -1, 64), kind, cur})
 	})
 	if err != nil {
 		return nil, fmt.Errorf("export long: %w", err)
@@ -65,6 +93,13 @@ func exportCSV(ctx context.Context, db *sql.DB, en bool) ([]byte, error) {
 	kinds, err := listKinds(ctx, db)
 	if err != nil {
 		return nil, err
+	}
+	if en {
+		for i, k := range kinds {
+			if n, ok := seededKindEn[k.Name]; ok {
+				kinds[i].Name = n
+			}
+		}
 	}
 	byKey := kindMap(kinds)
 	type acct struct {

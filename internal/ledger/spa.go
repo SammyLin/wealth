@@ -11,7 +11,7 @@ import (
 )
 
 // serveSPA serves the Vite build in web/dist. Hashed assets under /assets are immutable;
-// every other non-API path gets index.html so client-side routes deep-link.
+// every other non-API path gets index.html so client-side routes deep-link. HEAD works too (uptime monitors).
 // Without a build (go test, fresh clone) the dist only holds .gitkeep and / explains what to run.
 func serveSPA(r *gin.Engine) {
 	dist, err := fs.Sub(wealth.Web, "web/dist")
@@ -25,7 +25,7 @@ func serveSPA(r *gin.Engine) {
 	files := http.FS(dist)
 	r.NoRoute(func(c *gin.Context) {
 		p := c.Request.URL.Path
-		if strings.HasPrefix(p, "/api/") || c.Request.Method != http.MethodGet {
+		if m := c.Request.Method; strings.HasPrefix(p, "/api/") || (m != http.MethodGet && m != http.MethodHead) {
 			c.Status(http.StatusNotFound)
 			return
 		}

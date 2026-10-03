@@ -4,10 +4,28 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/gin-gonic/gin"
 )
+
+// fx is GET /api/fx?cur=&date=: the rate that converts 1 cur into the base currency on date.
+func (h *api) fx(c *gin.Context) {
+	set, err := settings(c.Request.Context(), h.db)
+	if fail(c, err) {
+		return
+	}
+	rate, err := fetchFX(c.Request.Context(), c.Query("cur"), set["base_currency"], c.Query("date"))
+	if err != nil {
+		slog.Warn("fx lookup failed", "err", err)
+		bad(c, http.StatusBadGateway, "查不到 {} 在 {} 的匯率", c.Query("cur"), c.Query("date"))
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"rate": rate})
+}
 
 // FXClient is replaced on Workers, where outbound requests must go through fetch().
 var FXClient = &http.Client{Timeout: 8 * time.Second}

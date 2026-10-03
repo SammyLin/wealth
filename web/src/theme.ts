@@ -7,6 +7,8 @@ import { t, type Lang } from "./i18n"
 //   var(--wealth-rule)     hairlines             var(--wealth-up/down)  gain / loss text
 //   var(--wealth-font-num) Fraunces; prefer className="num" which also sets tabular digits
 // Colors: c="gold" (primary), c="dimmed" (ink-3); kind colors come from state.kinds[].color.
+// Semantic colors are theme tuples too, so alerts, notifications and confirm buttons share the palette:
+//   color="up" (gain, success)   color="down" (loss, errors, destructive)   color="warn" (needs attention)
 
 const SERIF = 'GenRyuMinTW, "Noto Serif TC", Georgia, serif'
 const SANS = 'MiSansTC, "Noto Sans TC", system-ui, -apple-system, sans-serif'
@@ -18,6 +20,11 @@ const gold: MantineColorsTuple = ["#fbf5e4", "#f1e2bb", "#e8cf8e", "#ddb95c", "#
 // Warm grays replace Mantine's cool ones so default borders, dimmed text and hovers read as paper:
 // gray-1 paper, gray-2 paper-2, gray-3 rule, gray-4 rule-2, gray-6 ink-3, gray-7 ink-2, gray-9 ink.
 const gray: MantineColorsTuple = ["#fbf8f1", "#f5efe3", "#ede4d2", "#e3d8c4", "#cdbfa6", "#a89b85", "#6f6556", "#4a4237", "#332c23", "#1f1a14"]
+
+// Shade 7 is what light mode paints (v1's --up / --down), shade 5 what dark mode paints (SHADE below).
+const up: MantineColorsTuple = ["#eaf4ec", "#cfe6d4", "#a9d3b2", "#8fc99b", "#7cc48a", "#5aa96a", "#428f53", "#2d6a39", "#22512b", "#17381e"]
+const down: MantineColorsTuple = ["#fbeceb", "#f4d3d0", "#eab0ab", "#e89a8c", "#e58474", "#e07a6c", "#c4483e", "#a3302a", "#7f2520", "#5c1a17"]
+const warn: MantineColorsTuple = ["#fdf0e6", "#f9dcc4", "#f2bf93", "#eaa063", "#e0843a", "#e0843a", "#a8591a", "#8a4914", "#6b380f", "#4d280a"]
 
 // Dark scheme: deep warm charcoal with parchment text (dark-0 text, dark-2 dimmed, dark-4 borders, dark-7 body).
 const dark: MantineColorsTuple = ["#ece3d0", "#d6cbb5", "#a99d87", "#857a66", "#463e33", "#3a332a", "#2f2922", "#28231d", "#1d1914", "#14110e"]
@@ -61,7 +68,7 @@ const makeTheme = (lang: Lang) => {
     primaryShade: SHADE,
     autoContrast: true,
     variantColorResolver,
-    colors: { gold, gray, dark },
+    colors: { gold, gray, dark, up, down, warn },
     white: "#fbf8f1",
     black: "#1f1a14",
     fontFamily: SANS,
@@ -81,6 +88,7 @@ const makeTheme = (lang: Lang) => {
       Button: { defaultProps: { radius: "xl" } },
       ActionIcon: { defaultProps: { variant: "subtle", color: "gray", radius: "xl" } },
       Tooltip: { defaultProps: { withArrow: true, openDelay: 300 } },
+      Badge: { defaultProps: { tt: "none" } }, // Mantine's default is uppercase ("6 ROWS")
       NumberInput: { defaultProps: { thousandSeparator: "," } },
       Alert: { defaultProps: { variant: "light" } },
       DateInput: { defaultProps: { ariaLabels, valueFormat } },
@@ -116,6 +124,8 @@ export const cssVariablesResolver: CSSVariablesResolver = (theme) => ({
     ...contrastVars(theme, "light"),
     "--mantine-color-body": "#fbf8f1",
     "--mantine-color-text": "#1f1a14",
+    // placeholders carry meaning here ("沿用上一筆" = carry the last balance): ink-3, 5.4:1 on an input, not gray-5's 2.6:1
+    "--mantine-color-placeholder": "#6f6556",
     "--wealth-paper": "#f5efe3",
     "--wealth-paper-2": "#ede4d2",
     "--wealth-rule": "#e3d8c4",
@@ -126,6 +136,7 @@ export const cssVariablesResolver: CSSVariablesResolver = (theme) => ({
     ...contrastVars(theme, "dark"),
     "--mantine-color-body": "#28231d",
     "--mantine-color-text": "#ece3d0",
+    "--mantine-color-placeholder": "#a99d87", // dark-2: 5.4:1 on the dark input
     "--wealth-paper": "#1d1914",
     "--wealth-paper-2": "#2f2922",
     "--wealth-rule": "#3a332a",
