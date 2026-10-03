@@ -2,7 +2,6 @@ package ledger
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
 	"fmt"
 	"log/slog"
@@ -12,8 +11,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-
-	"github.com/SammyLin/wealth"
 )
 
 // New holds every page and API route. cmd/wealth's server.go (local SQLite) and worker.go
@@ -24,19 +21,7 @@ func New(db *sql.DB, fileBackups bool, middleware ...gin.HandlerFunc) *gin.Engin
 	r := gin.New()
 	r.Use(append([]gin.HandlerFunc{gin.Recovery()}, middleware...)...)
 
-	// icons.js is cached for a day, so the page links it by content hash: a new build means a new URL.
-	icons, _ := wealth.Web.ReadFile("web/icons.js")
-	page, _ := wealth.Web.ReadFile("web/index.html")
-	sum := sha256.Sum256(icons)
-	page = []byte(strings.Replace(string(page), `src="/icons.js"`, fmt.Sprintf(`src="/icons.js?v=%x"`, sum[:6]), 1))
-	r.GET("/", func(c *gin.Context) {
-		c.Header("Cache-Control", "no-cache")
-		c.Data(http.StatusOK, "text/html; charset=utf-8", page)
-	})
-	r.GET("/icons.js", func(c *gin.Context) {
-		c.Header("Cache-Control", "public, max-age=31536000, immutable")
-		c.Data(http.StatusOK, "text/javascript; charset=utf-8", icons)
-	})
+	serveSPA(r)
 
 	r.GET("/api/state", func(c *gin.Context) {
 		ctx := c.Request.Context()
