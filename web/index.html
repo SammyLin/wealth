@@ -867,15 +867,17 @@ function delta(d, label) {
 // One bar for assets (split by kind), one for liabilities + net worth: same length when balanced.
 function balanceBar(last, assets, debt) {
   const scale = Math.max(assets, debt) || 1, net = assets - debt;
-  const ks = ASSET_KINDS.filter(k => last.by_kind[k] > 0);
+  // same liquidity tiers as the balance sheet, colored by each tier's main kind
+  const tiers = TIERS.map(([name, ks]) => ({ name, color:KINDS[ks[0] === 'tw_stock' ? 'us_stock' : ks[0]].color,
+    v:ks.reduce((s, k) => s + Math.max(0, last.by_kind[k] || 0), 0) })).filter(x => x.v > 0);
   const seg = (w, style, title, inner = '', cls = '') =>
     `<span class="bb-seg ${cls}" style="flex:0 0 calc(${(w/scale*100).toFixed(3)}% - 2px);${style}" title="${title}">${inner}</span>`;
   return `<div class="balance" role="group" aria-label="${t('資產負債平衡')}">
     <h2>${t('你真正擁有的')}</h2>
     <p>${t('上排是資產,下排是負債;金色那段就是淨資產。')}</p>
-    <div class="bb-row"><span class="bb-k">${t('資產')}</span><div class="bb-bar">${ks.map((k, i) =>
-      seg(last.by_kind[k], `background:${KINDS[k].color};animation-delay:${i*.06}s`, `${KINDS[k].label} ${fmt(last.by_kind[k])}`)).join('')}</div></div>
-    <div class="bb-legend">${ks.map(k => `<span>${dot(k)} ${KINDS[k].label} ${Math.round(last.by_kind[k]/assets*100)}%</span>`).join('')}</div>
+    <div class="bb-row"><span class="bb-k">${t('資產')}</span><div class="bb-bar">${tiers.map((x, i) =>
+      seg(x.v, `background:${x.color};animation-delay:${i*.06}s`, `${t(x.name)} ${fmt(x.v)}`)).join('')}</div></div>
+    <div class="bb-legend">${tiers.map(x => `<span><span class="dot" style="background:${x.color}"></span> ${t(x.name)} ${Math.round(x.v/assets*100)}%</span>`).join('')}</div>
     <div class="bb-row"><span class="bb-k">${t('負債')}</span><div class="bb-bar">${
       debt > 0 ? seg(debt, `background:${KINDS.liability.color};opacity:.85`, `${t('負債')} ${fmt(debt)}`) : ''}${
       net > 0 ? seg(net, 'animation-delay:.35s', `${t('淨資產')} ${fmt(net)}`, '', 'net') : ''}</div></div>
