@@ -3,7 +3,7 @@ import { ArrowDownRight, ArrowUpRight } from "lucide-react"
 import type { Account, Kind } from "../../api/types"
 import { useMoney } from "../../api/useLedger"
 import { t } from "../../i18n"
-import { fmtDate, fmtFx } from "../../lib/format"
+import { fmtDate, fmtFx, fmtQty } from "../../lib/format"
 import { valueOf } from "./sheet"
 
 /**
@@ -34,7 +34,7 @@ export function AccountRow({ account: a, kind, base, liability, onEdit }: Props)
   const good = liability ? delta < 0 : delta > 0
   const when = last ? fmtDate(last.date) : t("尚未記錄")
   // no rate before the first record (the server's fx 1 is a placeholder, not a rate)
-  const sub = a.currency === base ? when : last ? `${money(a.amount)} ${a.currency} × ${fmtFx(a.fx)} · ${when}` : `${a.currency} · ${when}`
+  const sub = a.currency === base ? when : last ? `${fmtQty(a.amount)} ${a.currency} × ${fmtFx(a.fx)} · ${when}` : `${a.currency} · ${when}`
 
   return (
     <NavLink

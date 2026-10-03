@@ -23,8 +23,8 @@ type Props = {
   onChange: (patch: Partial<Draft>) => void
   onPasteMany: (values: string[]) => void
   onAmountBlur: () => void
-  /** Enter in either field: on to the next row's amount, or submit from the last one. */
-  onEnter: () => void
+  /** Enter in either field: the modal decides where focus goes next (rate field, next row, or save). */
+  onEnter: (from: "amt" | "fx") => void
 }
 
 export function RecordRow({ account: a, kind, base, date, draft, parsed, fxLoading, initialFocus, stale, amountRef, fxRef, onChange, onPasteMany, onAmountBlur, onEnter }: Props) {
@@ -79,7 +79,7 @@ export function RecordRow({ account: a, kind, base, date, draft, parsed, fxLoadi
           onKeyDown={(e) => {
             if (e.key !== "Enter" || e.nativeEvent.isComposing) return
             e.preventDefault()
-            onEnter()
+            onEnter("amt")
           }}
           inputMode="decimal"
           autoComplete="off"
@@ -111,7 +111,7 @@ export function RecordRow({ account: a, kind, base, date, draft, parsed, fxLoadi
             onKeyDown={(e) => {
               if (e.key !== "Enter" || e.nativeEvent.isComposing) return
               e.preventDefault()
-              onEnter()
+              onEnter("fx")
             }}
             inputMode="decimal"
             autoComplete="off"

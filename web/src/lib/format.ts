@@ -71,6 +71,9 @@ export const CURRENCIES = ["TWD", "USD", "JPY", "EUR", "CNY", "HKD", "GBP", "AUD
 /** 1234567.5 → "1,234,567.5" for an editable input (always "," thousands, which parseAmount reads back). */
 export const fmtInput = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 6 })
 
+/** A holding in its own currency (0.5 BTC, 33,184 USD): plain digits, never the 萬/K display unit. */
+export const fmtQty = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 8 })
+
 /**
  * Exchange rates span ten orders of magnitude (KRW→USD 0.000745, USD→IDR 16,000), so they are shown with
  * significant digits, never fixed decimals, and stored at full precision.

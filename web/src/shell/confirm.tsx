@@ -20,7 +20,8 @@ export function askConfirm({ title, body, confirm, onConfirm, danger, cancel = t
     title,
     children: <Text fz="sm">{body}</Text>,
     labels: { confirm, cancel },
-    confirmProps: danger ? { color: "down" } : undefined,
+    // focus starts on the confirm button so Enter answers (Mantine's trap would otherwise land on the close X)
+    confirmProps: { "data-autofocus": true, ...(danger ? { color: "down" } : {}) },
     onConfirm,
     onClose,
   })

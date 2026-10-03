@@ -241,7 +241,13 @@ function RecordForm({ onClose, onCancel, onUnsaved, focusFirst }: FormProps) {
               onChange={(p) => patch(a.id, p)}
               onPasteMany={(values) => pasteMany(i, values)}
               onAmountBlur={() => parsed.kind === "ok" && drafts[a.id].touched && setDrafts((prev) => ({ ...prev, [a.id]: { ...prev[a.id], amt: fmtInput(parsed.amount) } }))}
-              onEnter={() => {
+              onEnter={(from) => {
+                // a foreign account's first record has no rate to carry forward: stop on the rate field before moving on
+                const fx = fxInputs.current[i]
+                if (from === "amt" && fx && a.currency !== base && (a.history.length === 0 || fxFailed.includes(a.currency))) {
+                  fx.focus()
+                  return
+                }
                 const next = amountInputs.current[i + 1]
                 if (next) next.focus()
                 else submit()

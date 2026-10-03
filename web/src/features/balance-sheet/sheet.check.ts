@@ -67,3 +67,9 @@ assert.equal(isStale(hist, "2026-05-30"), false)
 assert.equal(isStale(hist, "2026-06-01"), true)
 assert.equal(isStale({ ...hist, archived: true }, "2027-01-01"), false)
 assert.equal(isStale(usd(22, "JPY"), "2027-01-01"), false)
+
+// a crypto holding keeps its decimals in the balance sheet subline (round 6: 0.5 BTC showed as "1 BTC")
+import { fmtQty } from "../../lib/format.ts"
+assert.equal(fmtQty(0.5), "0.5")
+assert.equal(fmtQty(33184), "33,184")
+assert.equal(fmtQty(0.00012345), "0.00012345")
