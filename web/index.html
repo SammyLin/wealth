@@ -492,7 +492,7 @@ const EN = {
   '資產負債平衡':'Assets vs liabilities', '你真正擁有的':'What you really own', '上排是資產,下排是負債;金色那段就是淨資產。':'Top bar is assets, bottom is liabilities; the gold part is your net worth.',
   '資不抵債':'Underwater', '總資產':'Total assets', '負債比':'Debt ratio',
   '{} 個帳戶':'{} accounts', '資產合計':'Total assets', '負債與淨資產':'Liabilities & net worth', '{} 筆負債':'{} liabilities', '沒有負債。':'No liabilities.',
-  '負債 + 淨資產':'Liabilities + net worth', '已封存 {} 個帳戶':'{} archived accounts', '尚未記錄':'Not recorded yet', '編輯、看歷史紀錄':'Edit, see history',
+  '= 資產合計':'= Total assets', '已封存 {} 個帳戶':'{} archived accounts', '尚未記錄':'Not recorded yet', '編輯、看歷史紀錄':'Edit, see history',
   '圖表元件載入失敗,檢查網路後重新整理':'Chart library failed to load. Check your connection and reload.',
   // accounts, events, settings
   '封存「{}」?':'Archive “{}”?', '封存後會收進資產負債表下方的「已封存」,歷史紀錄仍保留在趨勢圖裡。':'It moves to “Archived” under the balance sheet; its history stays in the trend.',
@@ -870,7 +870,7 @@ function sheet(last, assets, debt) {
     <div class="side"><div class="side-h">${t('負債與淨資產')} <span>${T`${live.filter(a => a.kind === 'liability').length} 筆負債`}</span></div>
       ${group('liability') || `<p class="empty-line" style="margin-top:12px">${t('沒有負債。')}</p>`}
       <div class="networth-line"><span>${t('淨資產')}</span><b>${fmt(assets - debt)}</b></div>
-      <div class="total"><span>${t('負債 + 淨資產')}</span><b>${fmt(assets)}</b></div></div>
+      <div class="total"><span>${t('= 資產合計')}</span><b>${fmt(assets)}</b></div></div>
   </div>
   ${archived.length ? `<details class="archived"><summary><i data-lucide="chevron-right" class="chev"></i><i data-lucide="archive"></i>${T`已封存 ${archived.length} 個帳戶`}</summary>
     ${archived.map(acctRow).join('')}</details>` : ''}`;
