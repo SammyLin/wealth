@@ -227,6 +227,8 @@ input:disabled { background:var(--paper-2); color:var(--ink-3); }
 .pay-list li { display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px solid rgba(245,239,227,.12); color:#e9dfcc; }
 .pay-list li .dot { margin-right:8px; box-shadow:0 0 0 1px rgba(245,239,227,.4); }
 .pay-list b { font-weight:400; font-variant-numeric:tabular-nums; color:var(--paper); }
+.pay-list .pay-grp, .pay-list .pay-grp b { color:var(--paper); font-weight:500; }
+.pay-list .pay-sub { padding-left:14px; font-size:.8rem; }
 .next { background:var(--card); border:1px solid var(--rule); border-radius:20px; padding:20px 22px; box-shadow:var(--shadow); display:flex; flex-direction:column; gap:12px; }
 .next h3 { margin:0; font-family:var(--serif); font-weight:600; font-size:1rem; }
 .step { display:grid; grid-template-columns:76px 1fr auto; gap:12px; align-items:baseline; padding-top:10px; border-top:1px solid var(--rule); }
@@ -703,6 +705,22 @@ const thisMonth = () => today().slice(0, 7);
 // Sum of each loan's rounded payment, the way the bank (and the old sheet) shows it.
 const monthTotal = row => row ? Object.values(row.by).reduce((s, v) => s + Math.round(v), 0) : 0;
 
+// This month's payments, grouped by the liability account each loan is linked to,
+// so tranches of one mortgage show their subtotal.
+function payList(L, cur) {
+  const groups = [];
+  L.filter(l => cur?.by[l.id]).forEach(l => {
+    const k = l.account_id || 'loan' + l.id;
+    let g = groups.find(g => g.k === k);
+    if (!g) groups.push(g = { k, name:state.accounts.find(a => a.id === l.account_id)?.name, ls:[] });
+    g.ls.push(l);
+  });
+  const row = (l, cls = '') => `<li class="${cls}"><span><span class="dot" style="background:${LOAN_COLORS[L.indexOf(l) % LOAN_COLORS.length]}"></span>${esc(l.name)}</span><b>${fmt(cur.by[l.id])}</b></li>`;
+  return groups.map(g => g.ls.length < 2 ? row(g.ls[0]) :
+    `<li class="pay-grp"><span>${esc(g.name)}</span><b>${fmt(g.ls.reduce((s, l) => s + Math.round(cur.by[l.id]), 0))}</b></li>` +
+    g.ls.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric:true })).map(l => row(l, 'pay-sub')).join('')).join('');
+}
+
 function loanSection() {
   const L = state.loans, S = state.loan_schedule;
   if (!L.length) return `<p class="empty-line">${t('還沒有登記貸款。新增後會算出每月月付、寬限期結束日和月付變化。')}</p>`;
@@ -738,7 +756,7 @@ function loanSection() {
     <div class="pay-card">
       <div class="lbl">${pick(`${now.replace('-', ' 年 ')} 月要繳`, `Due ${now.replace('-', '.')}`)}</div>
       <div class="amt">${fmt(curTotal)}<small>${pick('元', ' ' + esc(BASE()))}</small></div>
-      <ul class="pay-list">${L.filter(l => cur?.by[l.id]).map(l => `<li><span><span class="dot" style="background:${LOAN_COLORS[L.indexOf(l) % LOAN_COLORS.length]}"></span>${esc(l.name)}</span><b>${fmt(cur.by[l.id])}</b></li>`).join('')}</ul>
+      <ul class="pay-list">${payList(L, cur)}</ul>
       <div class="sub">${nextEnd ? T`下一個寬限期結束:${esc(nextEnd.name)} · ${pretty(nextEnd.grace_end)}(還有 ${days(nextEnd.grace_end)} 天)` : t('所有貸款都已經在還本金了')}</div>
     </div>
     <div class="next"><h3>${t('月付變化')}</h3>
