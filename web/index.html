@@ -146,6 +146,10 @@ html[lang=en] .bb-legend { margin-left:80px; }
 .total { margin-top:auto; padding-top:14px; display:flex; justify-content:space-between; align-items:baseline; font-size:.85rem; color:var(--ink-2); }
 .total b { font-family:var(--num); font-weight:500; font-size:1.2rem; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:1px; }
 .total.net span { color:var(--gold); font-weight:500; }
+.tier + .tier { margin-top:6px; border-top:1px solid var(--rule); }
+.tier-h { display:flex; justify-content:space-between; align-items:baseline; padding:12px 0 0; font-size:.85rem; font-weight:500; color:var(--ink); }
+.tier-h b { font-family:var(--num); font-weight:500; font-variant-numeric:tabular-nums; }
+.tier .grp { margin:4px 0 4px 12px; }
 summary.grp-h { cursor:pointer; list-style:none; }
 summary.grp-h::-webkit-details-marker { display:none; }
 summary.grp-h .chev { width:14px; height:14px; color:var(--ink-3); transition:transform .25s var(--ease); }
@@ -461,7 +465,7 @@ const EN = {
   '事件':'Milestone', '例:買房、換工作、年終入帳':'e.g. bought a home, new job, year-end bonus',
   // kinds and totals
   '銀行':'Bank', '台股':'TW stocks', '美股':'US stocks', '動產':'Personal property', '不動產':'Real estate', '加密貨幣':'Crypto', '負債':'Liabilities',
-  '資產':'Assets', '淨資產':'Net worth', '全部':'All', '合計':'Total', '今天':'Today', '元':'',
+  '資產':'Assets', '淨資產':'Net worth', '流動資產':'Liquid assets', '投資資產':'Investments', '自用資產':'Personal-use assets', '全部':'All', '合計':'Total', '今天':'Today', '元':'',
   // main page
   '連不到伺服器,確認 wealth 程式還在執行':'Can\'t reach the server. Check that wealth is still running.', '伺服器回應 {}':'Server responded {}',
   '讀不到資料':'Couldn\'t load data', '再試一次':'Try again', '從第一個帳戶開始':'Start with your first account',
@@ -552,6 +556,8 @@ const KINDS = {
   liability:   { label:'負債',     color:'#e34948' },
 };
 for (const k in KINDS) KINDS[k].label = t(KINDS[k].label);
+// Personal balance sheets group assets by how fast they turn into cash.
+const TIERS = [['流動資產', ['bank']], ['投資資產', ['tw_stock', 'us_stock', 'crypto']], ['自用資產', ['real_estate', 'movable']]];
 const ASSET_KINDS = Object.keys(KINDS).filter(k => k !== 'liability');
 const RANGES = { '3M':90, '6M':182, '1Y':365, '全部':0 };
 const BASE = () => state?.settings?.base_currency || 'TWD';
@@ -892,7 +898,11 @@ function sheet(last, assets, debt) {
   };
   return `<div class="sheet">
     <div class="side"><div class="side-h">${t('資產')} <span>${T`${live.filter(a => a.kind !== 'liability').length} 個帳戶`}</span></div>
-      ${ASSET_KINDS.map(group).join('')}
+      ${TIERS.map(([name, ks]) => {
+        const g = ks.map(group).join('');
+        const sum = live.filter(a => ks.includes(a.kind)).reduce((s, a) => s + (a.history.at(-1)?.value || 0), 0);
+        return g && `<div class="tier"><div class="tier-h"><span>${t(name)}</span><b>${fmt(sum)}</b></div>${g}</div>`;
+      }).join('')}
       <div class="total"><span>${t('資產合計')}</span><b>${fmt(assets)}</b></div></div>
     <div class="side"><div class="side-h">${t('負債與淨資產')} <span>${T`${live.filter(a => a.kind === 'liability').length} 筆負債`}</span></div>
       ${group('liability') || `<p class="empty-line" style="margin-top:12px">${t('沒有負債。')}</p>`}
