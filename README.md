@@ -18,7 +18,7 @@
 
 ![screenshot](docs/screenshot.png)
 
-> The UI is in Traditional Chinese and amounts are shown in 萬 (10,000) units. Contributions for other languages are welcome.
+> The UI is in English and Traditional Chinese. Amounts can be shown in 萬 (10,000), K / M, or full digits.
 
 ## Why
 
@@ -35,38 +35,61 @@ wealth answers just that. Record a balance for each account (bank, brokerage, ho
 
 | | |
 |---|---|
-| **Net-worth trend** | Plotted on real dates, so uneven gaps stay uneven; drag to zoom into a period |
+| **Net-worth trend** | Plotted on real dates, so uneven gaps stay uneven; zoom into a period with the mouse or the keyboard |
+| **What changed** | The hero shows which classes moved net worth since the last record, and nudges you about accounts not updated in 90 days |
+| **Your own structure** | Account classes are yours: name, color, and liquidity tier (liquid / investments / personal-use / liability). Reorder accounts, add notes |
+| **Fast input** | One grid for every account: tab or Enter through it, type `1,234,567` or `12.5萬`, paste a column from a spreadsheet, backfill a past date |
 | **Composition** | Stacked chart by asset class, multi-select filter |
-| **Balance sheet** | Assets = liabilities + net worth, both sides add up |
+| **Balance sheet** | Assets grouped by liquidity = liabilities + net worth, both sides add up |
 | **Mortgages** | Principal, rate, start date, grace period, term → monthly payment, payment changes, payoff date |
 | **Multi-currency** | Each record stores that day's FX rate, prefilled automatically; configurable base currency |
 | **Everything editable** | Ledger name, accounts, every past balance, loans and events can be edited or deleted |
+| **Your layout** | Reorder or hide dashboard sections; light / dark / system theme |
 | **English & 繁體中文** | UI follows the browser language; switch anytime from the top bar |
-| **Export** | CSV (opens in Excel); self-hosted also offers a full `.db` download and daily backups |
+| **Import & export** | Import balances from CSV; export a spreadsheet CSV or a CSV that re-imports as is; self-hosted also offers a full `.db` download and daily backups |
 
 ## Quick start
 
-Requires Go 1.25+.
+**Docker** (nothing else to install):
 
 ```sh
 git clone https://github.com/SammyLin/wealth.git
 cd wealth
-go run ./cmd/wealth
+cp .env.example .env          # set WEALTH_PASS
+docker compose up -d          # http://127.0.0.1:8080, user "me"
 ```
 
-Open http://127.0.0.1:8080:
+**From source** needs Go 1.26+ and Node 20+ (the UI is a Vite app that gets embedded into the Go binary):
 
-1. **⚙ Settings**: ledger name and base currency (locked once you record balances)
-2. **新增帳戶 (add account)**: name, kind (bank / TW stocks / US stocks / movable / real estate / crypto / liability), currency
-3. **記一筆 (record)**: enter current balances; FX rates are filled in for you
+```sh
+git clone https://github.com/SammyLin/wealth.git
+cd wealth
+make run                      # builds web/, then serves http://127.0.0.1:8080 with data in ./wealth.db
+make seed                     # optional, in a second terminal: fill it with demo data
+```
+
+`go run ./cmd/wealth` alone also works on a fresh clone (the API runs and `/` explains how to build the UI).
+
+**Dev loop:** `go run ./cmd/wealth` (API on :8080) plus `cd web && npm run dev` (Vite with hot reload on :5173, proxies `/api`), or just `make dev`.
+
+Then:
+
+1. Pick the **base currency** and **amount unit** on the first screen (the base currency locks once you record balances)
+2. **Add account**: name, class (bank / TW stocks / US stocks / crypto / personal property / real estate / liability, or your own), currency
+3. **Record**: enter current balances; FX rates are filled in for you
 4. Come back every so often and update only what changed
 
 ## Self-host
 
-A single binary with SQLite on disk.
+A single binary with SQLite on disk, or Docker (data in the `wealth-data` volume; `WEALTH_PASS` comes from `.env`):
 
 ```sh
-WEALTH_PASS=secret WEALTH_ADDR=:8080 go run ./cmd/wealth   # a password is required on non-localhost addresses
+cp .env.example .env && $EDITOR .env   # set WEALTH_PASS
+docker compose up -d                  # builds the image on first run
+```
+
+```sh
+WEALTH_PASS=secret WEALTH_ADDR=:8080 ./wealth   # a password is required on non-localhost addresses
 ```
 
 | Variable | Default | Meaning |
@@ -74,7 +97,14 @@ WEALTH_PASS=secret WEALTH_ADDR=:8080 go run ./cmd/wealth   # a password is requi
 | `WEALTH_DB` | `wealth.db` | SQLite file |
 | `WEALTH_ADDR` | `127.0.0.1:8080` | Listen address; `WEALTH_PASS` is required unless it's localhost |
 | `WEALTH_USER` / `WEALTH_PASS` | `me` / empty | Basic auth |
+| `WEALTH_HOSTS` | empty | Without a password only `localhost` / `127.0.0.1` host names are served (DNS-rebinding guard); list extra names here, comma-separated |
 | `WEALTH_BACKUP_DIR` | `backups` | Daily backup, newest 30 kept |
+
+**Bind-mounting a folder instead of the volume:** the container runs as uid 10001, so the folder must be writable by it: `mkdir data && sudo chown 10001 data`, then `- ./data:/data` in `compose.yaml`.
+
+**Behind a reverse proxy:** writes are refused when the browser's `Origin` doesn't match the host the server sees, so the proxy must pass the original host along. nginx's `proxy_pass` sends its upstream address by default; add `proxy_set_header Host $host;` (or `X-Forwarded-Host`, which the server also honours). Caddy (`reverse_proxy 127.0.0.1:8080`) and Traefik keep the host by default.
+
+`GET /healthz` answers `ok` without credentials, for container healthchecks.
 
 Back up with SQLite's online backup, never `cp` (in WAL mode recent data may still be in the `-wal` file):
 
@@ -97,20 +127,22 @@ The same Go code compiles to WebAssembly and runs on Workers ([syumai/workers-go
 
 | File | What it holds |
 |---|---|
-| `cmd/wealth/server.go` | Self-hosted entry: SQLite, gzip, basic auth |
+| `cmd/wealth/server.go` | Self-hosted entry: SQLite, gzip, basic auth, host guard |
 | `cmd/wealth/worker.go` | Workers entry: D1, Access verification |
-| `internal/ledger/router.go` | Every page and API route (shared by both targets) |
+| `internal/ledger/router.go` | Every API route and the write guards (shared by both targets) |
+| `internal/ledger/import.go` | CSV balance import |
 | `internal/ledger/model.go` | Data types, net-worth series per date, input checks |
 | `internal/ledger/store.go` | Settings and loan queries |
 | `internal/ledger/fx.go` | Exchange-rate lookup |
 | `internal/ledger/loan.go` | Interest-only grace period → level-payment schedule and balance |
 | `internal/ledger/access.go` | Cloudflare Access JWT verification |
-| `internal/ledger/export.go` | CSV export |
+| `internal/ledger/export.go` | CSV export (spreadsheet layout, and the long layout the import reads) |
 | `internal/ledger/backup.go` | Self-hosted .db download and daily backups |
-| `embed.go` | Compiles `web/` and `migrations/` into the binary |
-| `migrations/` | Schema (shared by both targets) |
-| `web/index.html` | Frontend (single file; Chart.js loads when a chart scrolls into view) |
-| `web/icons.js` | Subset of [lucide](https://lucide.dev) icons, generated by `web/mkicons.cjs` |
+| `internal/ledger/spa.go` | Serves the embedded `web/dist` as a single-page app (immutable hashed assets, `index.html` fallback) |
+| `embed.go` | Compiles `web/dist` and `migrations/` into the binary |
+| `migrations/` | Schema (shared by both targets); `0002_kinds_layout.sql` adds custom account kinds, account order and notes |
+| `web/` | Frontend: Vite + React + TypeScript + [Mantine](https://mantine.dev); one folder per feature under `web/src/features/` (see [web/README.md](web/README.md)) |
+| `Dockerfile`, `compose.yaml` | Self-hosted image (Node build → Go build → small Alpine runtime) |
 
 ## Contributing
 

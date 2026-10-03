@@ -1,0 +1,10 @@
+.git
+.github
+**/node_modules
+web/dist
+build
+backups
+.wrangler
+*.db
+*.db-*
+.env

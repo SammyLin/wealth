@@ -1,0 +1,17 @@
+# docker compose up -d   →  http://127.0.0.1:8080 (user: WEALTH_USER, default "me"; password: WEALTH_PASS)
+# Data (wealth.db and the daily backups/) lives in the "wealth-data" volume.
+services:
+  wealth:
+    build: .
+    image: wealth:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080" # drop the 127.0.0.1 to expose it on your network (WEALTH_PASS is still required)
+    environment:
+      WEALTH_PASS: ${WEALTH_PASS:?Set WEALTH_PASS in .env (copy .env.example)}
+      WEALTH_USER: ${WEALTH_USER:-me}
+    volumes:
+      - wealth-data:/data
+
+volumes:
+  wealth-data:
