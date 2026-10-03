@@ -2,3 +2,64 @@
 @import "@mantine/dates/styles.css";
 @import "@mantine/charts/styles.css";
 @import "@mantine/notifications/styles.css";
+
+body {
+  background: var(--wealth-paper);
+  font-feature-settings: "tnum";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Amounts: <Text className="num">. Fraunces with tabular digits so columns line up. */
+.num {
+  font-family: var(--wealth-font-num);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+:focus-visible {
+  /* gold-7 on paper in light mode, gold-5 in dark: both clear 3:1 against the page */
+  outline: 2px solid var(--mantine-primary-color-filled);
+  outline-offset: 2px;
+}
+
+/* Touch screens and phone widths: every control gets a hit area of at least 44px, whatever size the layout
+   picked. (Big dialogs go full screen on phones through their own fullScreen prop; confirm prompts stay small.) */
+@media (pointer: coarse), (max-width: $mantine-breakpoint-sm) {
+  .mantine-ActionIcon-root,
+  .mantine-Button-root,
+  .mantine-Chip-label,
+  .mantine-SegmentedControl-label,
+  .mantine-Menu-item {
+    min-height: 2.75rem;
+  }
+  .mantine-ActionIcon-root { min-width: 2.75rem; }
+  .mantine-CloseButton-root { min-width: 2.75rem; min-height: 2.75rem; }
+  /* 16px text also stops iOS from zooming the page when an input gets focus */
+  .mantine-Input-input { min-height: 2.75rem; font-size: 1rem; }
+  .mantine-SegmentedControl-label { display: flex; align-items: center; justify-content: center; }
+}
+
+/* A disabled icon button (first row's "up", last row's "down") fades out instead of getting Mantine's filled
+   disabled background, which made it look more prominent than the enabled ones. */
+.mantine-ActionIcon-root:is(:disabled, [data-disabled]):not([data-loading]) {
+  background: transparent;
+  border-color: transparent;
+  opacity: 0.35;
+}
+
+.skip-link {
+  position: absolute;
+  left: 16px;
+  top: -48px;
+  z-index: 1000;
+  padding: 8px 12px;
+  border-radius: var(--mantine-radius-md);
+  background: var(--mantine-color-text);
+  color: var(--wealth-paper);
+}
+.skip-link:focus { top: 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}

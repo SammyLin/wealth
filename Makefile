@@ -3,14 +3,22 @@ run: web
 	go run ./cmd/wealth
 
 dev:            # Go API on :8080 + Vite dev server with HMR on :5173 (proxies /api)
-	go run ./cmd/wealth & cd web && npm run dev; kill %1
+	trap 'kill 0' EXIT; go run ./cmd/wealth & cd web && npm run dev
 
-web:
-	cd web && npm ci && npm run build
+# npm ci only when package-lock.json is newer than the last install
+web: web/node_modules/.package-lock.json
+	cd web && npm run build
+
+web/node_modules/.package-lock.json: web/package-lock.json
+	cd web && npm ci
 
 test:
+	go vet ./...
 	go test ./...
-	cd web && npm run build
+	cd web && npm run lint && npm run check && npm run build
+
+seed:           # demo data into a running server (make run first); WEALTH_URL overrides the address
+	node web/scripts/seed.mjs $${WEALTH_URL:-http://127.0.0.1:8080}
 
 # Cloudflare Workers (Go → WebAssembly + D1). nomsgpack trims gin's unused codecs (~25% smaller).
 build-worker: web
@@ -22,4 +30,4 @@ deploy-worker:
 	npx wrangler d1 migrations apply wealth --remote -c $(WRANGLER_CONFIG)
 	npx wrangler deploy -c $(WRANGLER_CONFIG)
 
-.PHONY: run dev web test build-worker deploy-worker
+.PHONY: run dev web test seed build-worker deploy-worker

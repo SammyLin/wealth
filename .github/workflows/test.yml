@@ -9,17 +9,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      # Go first, on the bare checkout: a fresh clone must compile and test without Node (web/dist/.gitkeep)
+      - run: go vet ./...
+      - run: go test ./...
       - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: web/package-lock.json
-      - run: cd web && npm ci && npm run lint && npm run build
-      - uses: actions/setup-go@v6
-        with:
-          go-version-file: go.mod
-      - run: go vet ./...
-      - run: go test ./...
+      - run: cd web && npm ci && npm run lint && npm run check && npm run build
       # the Workers build must keep compiling too
       - run: GOOS=js GOARCH=wasm go vet ./...
       - run: GOOS=js GOARCH=wasm go build -tags nomsgpack -o /dev/null ./cmd/wealth
+
+  # The self-host path: build the image, start it with a password, and check health, auth and the UI.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker build -t wealth:ci .
+      - run: docker run -d --name w -p 8080:8080 -e WEALTH_PASS=ci-secret wealth:ci
+      - name: smoke
+        run: |
+          for i in $(seq 30); do curl -fs http://127.0.0.1:8080/healthz && break; sleep 1; done
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/)" = 401
+          curl -fs -u me:ci-secret http://127.0.0.1:8080/ | grep -q '<div id="root">'
+          curl -fs -u me:ci-secret http://127.0.0.1:8080/api/state | grep -q '"kinds"'
+      - if: failure()
+        run: docker logs w

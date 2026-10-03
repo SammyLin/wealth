@@ -1,0 +1,82 @@
+// English for features/loans. Keys are the Chinese source strings; "{}" marks a T`` interpolation.
+export const en: Record<string, string> = {
+  // section
+  "每個月要繳多少、寬限期什麼時候結束、月付什麼時候會跳。": "What you pay each month, when interest-only ends, and when the payment jumps.",
+  "新增貸款": "Add loan",
+  "還沒有登記貸款": "No loans yet",
+  "新增後會算出每月月付、寬限期結束日和月付什麼時候會跳。一筆房貸若分成好幾段(不同利率、撥款日或寬限期),每段各新增一筆並連結到同一個負債帳戶,這裡就會合併成一筆房貸的月付。":
+    "Add one to see your monthly payment, when interest-only ends and when the payment jumps. If a mortgage is split into tranches (different rate, disbursement date or interest-only period), add each tranche and link them to the same liability account; they are then summed as one mortgage.",
+  "新增第一筆貸款": "Add your first loan",
+  "「{}」帳上負債 {},已登記的貸款剩餘本金只有 {},還差 {} 沒登記。補上那一段貸款,月付才會完整。":
+    "“{}” shows {} owed, but registered loans only cover {}: {} is unregistered. Add that tranche for complete payments.",
+  "寬限期只繳利息;之後本息平均攤還。實際金額以銀行通知為準。": "Interest only during the grace period, level payments after. Your bank's figures are authoritative.",
+  "刪除貸款「{}」?": "Delete loan “{}”?",
+  "只會刪掉這筆貸款的設定(月付計算),帳上的負債餘額不受影響。": "Only the loan setup (payment math) is removed; the liability balance stays.",
+  "已刪除「{}」": "Deleted “{}”",
+  "刪除": "Delete",
+  "取消": "Cancel",
+  "編輯": "Edit",
+  "編輯 {}": "Edit {}",
+  "刪除 {}": "Delete {}",
+
+  // this month
+  "{} 要繳": "Due {}",
+  "本月各筆月付": "This month's payments",
+  "這個月沒有要繳的貸款。": "Nothing due this month.",
+  "{} 起每月 {}": "From {}: {} a month",
+  "之後月付都不會再變。": "Payments won't change again.",
+  "所有貸款剩餘本金": "Total balance owed",
+
+  // chart
+  "每月貸款月付長條圖,從 {} 到 {} 繳清;最高每月 {},本月 {}": "Monthly loan payments from {} until payoff in {}; peak {} a month, {} this month",
+  "今天": "Today",
+  "合計": "Total",
+
+  // card
+  "尚未開始": "Not started",
+  "寬限期中": "Interest-only",
+  "還本中": "Repaying",
+  "已繳清": "Paid off",
+  "未連結負債帳戶": "Not linked to an account",
+  "年利率 {} · {} · {} 撥款": "{} APR · {} · disbursed {}",
+  "{} 年": "{} yr",
+  "{} 個月": "{} mo",
+  "剩餘本金": "Balance",
+  "本月月付": "Payment now",
+  "寬限期結束": "Interest-only ends",
+  "繳清日": "Payoff",
+  "已還本金 {}": "Principal repaid {}",
+  "已還 {} · 本金 {}": "{} repaid · principal {}",
+  "{} 寬限期結束,月付 {} → {}": "{} interest-only ends, payment {} → {}",
+  "{} 開始繳,月付 {}": "{} first payment, {}",
+
+  // modal
+  "編輯貸款": "Edit loan",
+  "一筆房貸若分好幾段(不同利率或起始日),每段各新增一次,並連結到同一個負債帳戶。":
+    "If a mortgage has several tranches (different rate or start date), add each one and link them to the same liability account.",
+  "名稱": "Name",
+  "例:房貸 第一段、車貸": "e.g. mortgage tranche 1, car loan",
+  "屬於哪個負債帳戶": "Liability account",
+  "(不連結)": "(not linked)",
+  "先在「帳戶與類別」新增負債帳戶,就能把貸款連結過去。": "Add a liability account under Accounts & classes to link this loan to it.",
+  "本金": "Principal",
+  "= {}": "= {}",
+  "可輸入 1280萬 這種寫法": "Shorthand like 12.8M or 1280萬 works",
+  "年利率": "Annual rate",
+  "起始日(撥款日)": "Start (disbursement) date",
+  "第一期在撥款的下個月繳": "The first payment is due the month after disbursement",
+  "寬限期(月)": "Interest-only (months)",
+  "只繳利息的月數,沒有就填 0": "Months of interest-only payments; 0 if none",
+  "總期數(月)": "Term (months)",
+  "共 {},含寬限期": "{} in total, including interest-only",
+  "寬限期月付": "Interest-only payment",
+  "之後月付": "Then",
+  "月付": "Monthly payment",
+  "總利息": "Total interest",
+  "填好本金、利率和期數,這裡會算出每月要繳多少。": "Fill in principal, rate and term to see the monthly payment.",
+  "關閉": "Close",
+  "儲存": "Save",
+  "新增": "Add",
+  "已更新貸款「{}」": "Updated loan “{}”",
+  "已新增貸款「{}」": "Added loan “{}”",
+}

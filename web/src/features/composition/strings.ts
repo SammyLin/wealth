@@ -1,0 +1,11 @@
+export const en: Record<string, string> = {
+  "全部": "All",
+  "篩選資產類別": "Filter asset classes",
+  "各類資產疊起來的高度,截至 {}。點類別只看那幾類,可複選。": "Every asset class, stacked, as of {}. Pick classes to show only those.",
+  "還沒有資產紀錄": "No assets recorded yet",
+  "記下各帳戶的餘額後,這裡會畫出每類資產的變化和目前比例。": "Once you record balances, this shows how each asset class changes and today's mix.",
+  "再記一筆不同日期的餘額,就能看到各類資產的變化。": "Record balances on another date to see how each class changes.",
+  "堆疊面積圖:{},{} 至 {},最新合計 {}": "Stacked area chart: {}, {} to {}, latest total {}",
+  "{} 資產比例:{}": "Asset mix on {}: {}",
+  "{} 這幾類都沒有餘額。": "None of these classes had a balance on {}.",
+}
