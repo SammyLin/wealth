@@ -145,9 +145,11 @@ html[lang=en] .bb-legend { margin-left:80px; }
 .acct canvas { width:72px; height:26px; }
 .total { margin-top:auto; padding-top:14px; display:flex; justify-content:space-between; align-items:baseline; font-size:.85rem; color:var(--ink-2); }
 .total b { font-family:var(--num); font-weight:500; font-size:1.2rem; color:var(--ink); border-bottom:3px double var(--ink); padding-bottom:1px; }
-.networth-line { display:flex; justify-content:space-between; align-items:baseline; margin-top:18px; padding:14px 16px; border-radius:12px;
-  background:var(--gold-wash); color:var(--gold); font-weight:500; }
-.networth-line b { font-family:var(--num); font-size:1.3rem; font-weight:500; color:var(--ink); }
+.total.net span { color:var(--gold); font-weight:500; }
+summary.grp-h { cursor:pointer; list-style:none; }
+summary.grp-h::-webkit-details-marker { display:none; }
+summary.grp-h .chev { width:14px; height:14px; color:var(--ink-3); transition:transform .25s var(--ease); }
+.grp[open] > summary .chev { transform:rotate(90deg); }
 .archived { margin-top:16px; }
 .archived summary { cursor:pointer; list-style:none; display:inline-flex; align-items:center; gap:8px; font-size:.82rem; color:var(--ink-3); padding:6px 0; }
 .archived summary::-webkit-details-marker { display:none; }
@@ -470,7 +472,7 @@ const EN = {
   '淨資產趨勢折線圖,{} 筆紀錄':'Net worth trend line chart, {} records', '在圖上左右拖曳可放大一段期間,雙擊還原':'Drag across the chart to zoom into a period; double-click to reset',
   '資產組成':'Asset mix', '各類資產疊起來的高度。點類別只看那幾類,可複選。':'Every asset class, stacked. Pick classes to show only those.',
   '篩選資產類別':'Filter asset classes', '各類資產堆疊面積圖':'Stacked area chart of asset classes',
-  '資產負債表':'Balance sheet', '左右兩邊合計相等:資產 = 負債 + 淨資產。':'Both sides add up: assets = liabilities + net worth.',
+  '資產負債表':'Balance sheet', '淨資產 = 資產合計 − 負債。點類別可以展開看帳戶。':'Net worth = total assets − liabilities. Click a class to see its accounts.',
   '房貸':'Mortgage', '每個月要繳多少、寬限期什麼時候結束、月付什麼時候會跳。':'What you pay each month, when interest-only ends, and when the payment jumps.',
   '大事記':'Milestones', '買房、換工作、年終這類轉折,會畫在趨勢圖上。':'Turning points like buying a home, a new job or a bonus, drawn on the trend chart.',
   '編輯 {}':'Edit {}', '刪除 {}':'Delete {}',
@@ -494,7 +496,7 @@ const EN = {
   '資產負債平衡':'Assets vs liabilities', '你真正擁有的':'What you really own', '上排是資產,下排是負債;金色那段就是淨資產。':'Top bar is assets, bottom is liabilities; the gold part is your net worth.',
   '資不抵債':'Underwater', '總資產':'Total assets', '負債比':'Debt ratio',
   '{} 個帳戶':'{} accounts', '資產合計':'Total assets', '負債與淨資產':'Liabilities & net worth', '{} 筆負債':'{} liabilities', '沒有負債。':'No liabilities.',
-  '= 資產合計':'= Total assets', '已封存 {} 個帳戶':'{} archived accounts', '尚未記錄':'Not recorded yet', '編輯、看歷史紀錄':'Edit, see history',
+  '已封存 {} 個帳戶':'{} archived accounts', '尚未記錄':'Not recorded yet', '編輯、看歷史紀錄':'Edit, see history',
   '圖表元件載入失敗,檢查網路後重新整理':'Chart library failed to load. Check your connection and reload.',
   // accounts, events, settings
   '封存「{}」?':'Archive “{}”?', '封存後會收進資產負債表下方的「已封存」,歷史紀錄仍保留在趨勢圖裡。':'It moves to “Archived” under the balance sheet; its history stays in the trend.',
@@ -554,6 +556,13 @@ const ASSET_KINDS = Object.keys(KINDS).filter(k => k !== 'liability');
 const RANGES = { '3M':90, '6M':182, '1Y':365, '全部':0 };
 const BASE = () => state?.settings?.base_currency || 'TWD';
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+// balance-sheet classes the viewer expanded; collapsed by default
+const openKinds = new Set((() => { try { return JSON.parse(localGet('openKinds')) || []; } catch { return []; } })());
+document.addEventListener('toggle', e => {
+  if (!e.target.matches?.('details.grp')) return;
+  e.target.open ? openKinds.add(e.target.dataset.kind) : openKinds.delete(e.target.dataset.kind);
+  localSet('openKinds', JSON.stringify([...openKinds]));
+}, true);
 let zoom = null, stackSel = new Set(), state, range = localGet('range') || '1Y', charts = {};
 
 const fmt = n => Math.round(n).toLocaleString('zh-TW');
@@ -667,7 +676,7 @@ function render() {
   <section class="sec reveal" aria-labelledby="h-sheet">
     <div class="sec-head">
       <div><div class="sec-title"><span class="sec-num">03</span><h2 id="h-sheet">${t('資產負債表')}</h2></div>
-        <p class="sec-desc">${t('左右兩邊合計相等:資產 = 負債 + 淨資產。')}</p></div>
+        <p class="sec-desc">${t('淨資產 = 資產合計 − 負債。點類別可以展開看帳戶。')}</p></div>
       <button class="btn btn-line" onclick="openAccount()"><i data-lucide="plus"></i>${t('新增帳戶')}</button>
     </div>
     ${sheet(last, assets, debt)}
@@ -877,9 +886,9 @@ function sheet(last, assets, debt) {
     if (!list.length) return '';
     const sum = list.reduce((s, a) => s + (a.history.at(-1)?.value || 0), 0);
     const base = k === 'liability' ? debt : assets;
-    return `<div class="grp"><div class="grp-h">${dot(k)}<span>${KINDS[k].label}</span>
+    return `<details class="grp" data-kind="${k}" ${openKinds.has(k) ? 'open' : ''}><summary class="grp-h"><i data-lucide="chevron-right" class="chev"></i>${dot(k)}<span>${KINDS[k].label}</span>
       <span class="share"><i style="width:${base ? Math.min(100, sum/base*100) : 0}%;background:${KINDS[k].color}"></i></span>
-      <span class="amt">${fmt(sum)}</span></div>${list.map(acctRow).join('')}</div>`;
+      <span class="amt">${fmt(sum)}</span></summary>${list.map(acctRow).join('')}</details>`;
   };
   return `<div class="sheet">
     <div class="side"><div class="side-h">${t('資產')} <span>${T`${live.filter(a => a.kind !== 'liability').length} 個帳戶`}</span></div>
@@ -887,8 +896,7 @@ function sheet(last, assets, debt) {
       <div class="total"><span>${t('資產合計')}</span><b>${fmt(assets)}</b></div></div>
     <div class="side"><div class="side-h">${t('負債與淨資產')} <span>${T`${live.filter(a => a.kind === 'liability').length} 筆負債`}</span></div>
       ${group('liability') || `<p class="empty-line" style="margin-top:12px">${t('沒有負債。')}</p>`}
-      <div class="networth-line"><span>${t('淨資產')}</span><b>${fmt(assets - debt)}</b></div>
-      <div class="total"><span>${t('= 資產合計')}</span><b>${fmt(assets)}</b></div></div>
+      <div class="total net"><span>${t('淨資產')}</span><b>${fmt(assets - debt)}</b></div></div>
   </div>
   ${archived.length ? `<details class="archived"><summary><i data-lucide="chevron-right" class="chev"></i><i data-lucide="archive"></i>${T`已封存 ${archived.length} 個帳戶`}</summary>
     ${archived.map(acctRow).join('')}</details>` : ''}`;
