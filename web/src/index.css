@@ -40,6 +40,10 @@ body {
   /* 16px text also stops iOS from zooming the page when an input gets focus */
   .mantine-Input-input { min-height: 2.75rem; font-size: 1rem; }
   .mantine-SegmentedControl-label { display: flex; align-items: center; justify-content: center; }
+  /* "show as table" disclosures and text-link buttons (the first-run demo link) were 19px tall */
+  /* (padding, not flex, on summary: display other than list-item drops its disclosure triangle) */
+  summary { padding-block: .8rem; }
+  button.mantine-Anchor-root { min-height: 2.75rem; }
 }
 
 /* A disabled icon button (first row's "up", last row's "down") fades out instead of getting Mantine's filled

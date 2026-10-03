@@ -3,6 +3,7 @@ package ledger
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"mime"
@@ -37,13 +38,13 @@ func New(db *sql.DB, fileBackups bool, middleware ...gin.HandlerFunc) *gin.Engin
 	serveSPA(r)
 	h := &api{db}
 
-	// For a container healthcheck (server.go lets it past basic auth); HEAD too, for uptime monitors.
+	// Answers "ok <version>". For a container healthcheck (server.go lets it past basic auth); HEAD too, for uptime monitors.
 	health := func(c *gin.Context) {
 		if err := db.PingContext(c.Request.Context()); err != nil {
 			c.String(http.StatusServiceUnavailable, "db unavailable")
 			return
 		}
-		c.String(http.StatusOK, "ok")
+		c.String(http.StatusOK, "ok "+Version)
 	}
 	r.GET("/healthz", health)
 	r.HEAD("/healthz", health)
@@ -156,11 +157,21 @@ func (e *userErr) body() gin.H {
 	return body
 }
 
+// SystemFonts (WEALTH_FONTS=system on the self-hosted server) drops the two web-font hosts: index.html is served
+// with data-fonts="system" so boot.js skips them, and the CSP stops allowing them. For air-gapped or LAN-only installs.
+var SystemFonts bool
+
 // csp: scripts only from this origin (web/public/boot.js replaced the inline boot script and the fonts'
-// onload swap), styles inline too (Mantine injects <style> tags), fonts from the two font hosts.
-const csp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://font.emtech.cc; " +
-	"font-src 'self' data: https://fonts.gstatic.com https://font.emtech.cc; img-src 'self' data:; connect-src 'self'; " +
-	"object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+// onload swap), styles inline too (Mantine injects <style> tags), fonts from the two font hosts unless SystemFonts.
+func csp() string {
+	style, font := " https://fonts.googleapis.com https://font.emtech.cc", " https://fonts.gstatic.com https://font.emtech.cc"
+	if SystemFonts {
+		style, font = "", ""
+	}
+	return "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'" + style + "; " +
+		"font-src 'self' data:" + font + "; img-src 'self' data:; connect-src 'self'; " +
+		"object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+}
 
 // guardWrites blocks cross-site writes (CSRF), caps write bodies and sets basic security headers. Mutating
 // /api requests must carry a JSON (or, for the import, CSV) body type, which a plain HTML form can't send
@@ -170,7 +181,7 @@ const csp = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inl
 func guardWrites(c *gin.Context) {
 	h := c.Writer.Header()
 	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Content-Security-Policy", csp)
+	h.Set("Content-Security-Policy", csp())
 	h.Set("Referrer-Policy", "same-origin")
 	m, p := c.Request.Method, c.Request.URL.Path
 	if m == http.MethodGet || m == http.MethodHead || m == http.MethodOptions || !strings.HasPrefix(p, "/api/") {
@@ -234,6 +245,21 @@ func noContentOr404(c *gin.Context, res sql.Result, err error, msg string) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// bindJSON decodes the body into v, or answers 400 and returns false. A body past maxBody gets its own message
+// instead of whatever the handler would say about a missing field.
+// Version is stamped at build time: -ldflags "-X github.com/SammyLin/wealth/internal/ledger.Version=v2.0.0".
+var Version = "dev"
+
+func bindJSON(c *gin.Context, v any) bool {
+	err := c.ShouldBindJSON(v)
+	if mb := (*http.MaxBytesError)(nil); errors.As(err, &mb) {
+		bad(c, http.StatusBadRequest, "內容超過 1 MB")
+	} else if err != nil {
+		bad(c, http.StatusBadRequest, "格式不正確")
+	}
+	return err == nil
 }
 
 func fail(c *gin.Context, err error) bool {

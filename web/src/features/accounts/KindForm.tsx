@@ -62,6 +62,8 @@ export function KindForm({ onDone, nameRef }: { onDone: () => void; nameRef?: Re
           label={t("流動性")}
           description={t("「負債」會從淨資產扣掉")}
           allowDeselect={false}
+          searchable
+          selectFirstOptionOnChange
           data={LIQUIDITY.map((l) => ({ value: l.value, label: t(l.label) }))}
           {...form.getInputProps("liquidity")}
         />

@@ -32,7 +32,9 @@ export function MixDonut({ row, kinds }: { row: Row; kinds: Kind[] }) {
         thickness={22}
         paddingAngle={1}
         withLabels
-        labelsType="percent"
+        withLabelsLine={false}
+        // slices under 3% get no label (they crowded each other); the legend below lists every share
+        pieProps={{ label: SliceLabel }}
         tooltipDataSource="segment"
         valueFormatter={money}
         chartLabel={money(total)}
@@ -61,3 +63,11 @@ export function MixDonut({ row, kinds }: { row: Row; kinds: Kind[] }) {
     </Stack>
   )
 }
+
+type LabelProps = { x: number; y: number; cx: number; percent?: number }
+const SliceLabel = ({ x, y, cx, percent = 0 }: LabelProps) =>
+  percent < 0.03 ? null : (
+    <text x={x} y={y} textAnchor={x > cx ? "start" : "end"} fill="var(--mantine-color-dimmed)" fontFamily="var(--wealth-font-num)" fontSize={12}>
+      {fmtPct(percent, 0)}
+    </text>
+  )

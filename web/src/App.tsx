@@ -1,15 +1,18 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react"
 import { DatesProvider } from "@mantine/dates"
+import { useHotkeys } from "@mantine/hooks"
 import "dayjs/locale/zh-tw"
 import { Alert, AppShell, Button, Card, Container, Skeleton, Stack, Text } from "@mantine/core"
 import { CloudOff, RotateCw } from "lucide-react"
 import { LedgerProvider, useLedger } from "./api/useLedger"
 import { t, useLang } from "./i18n"
 import { AppHeader } from "./shell/AppHeader"
-import { DialogContext, type Dialog } from "./shell/dialogs"
+import { DialogContext, type AccountTarget, type Dialog } from "./shell/dialogs"
+import { DemoBanner } from "./shell/demo"
 import { FirstRun } from "./shell/FirstRun"
 import { SectionNumber } from "./shell/SectionCard"
 import { useLayout } from "./shell/sections"
+import { useUndoShortcut } from "./shell/undo"
 import { Overview } from "./features/overview/Hero"
 import { RangeProvider } from "./features/overview/range"
 
@@ -35,11 +38,14 @@ function Shell() {
   const { state } = useLedger()
   const [dialog, setDialog] = useState<Dialog | null>(null)
   const [loaded, setLoaded] = useState<Dialog["name"][]>([])
-  const open = useCallback((name: Dialog["name"], accountId?: number) => {
+  const open = useCallback((name: Dialog["name"], accountId?: AccountTarget) => {
     setDialog({ name, accountId })
     setLoaded((l) => (l.includes(name) ? l : [...l, name]))
   }, [])
   const close = () => setDialog(null)
+  useUndoShortcut()
+  // R opens 記一筆 from the dashboard (not over another dialog, whose unsaved edits it would drop)
+  useHotkeys([["r", () => !dialog && state?.accounts.some((a) => !a.archived) && open("record")]])
 
   useEffect(() => {
     if (state) document.title = t(state.settings.title)
@@ -91,6 +97,7 @@ function Body() {
   return (
     <RangeProvider>
       {stale}
+      <DemoBanner />
       <Overview />
       <Stack gap="lg">
         {visible.map(({ id, component: Section }, i) => (

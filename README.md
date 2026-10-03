@@ -45,7 +45,7 @@ wealth answers just that. Record a balance for each account (bank, brokerage, ho
 | **Multi-currency** | Each record stores that day's FX rate, prefilled automatically; configurable base currency |
 | **Everything editable** | Ledger name, accounts, every past balance, loans and events can be edited or deleted |
 | **Your layout** | Reorder or hide dashboard sections; light / dark / system theme |
-| **English & 繁體中文** | UI follows the browser language; switch anytime from the top bar |
+| **English & 繁體中文** | UI follows the browser language; switch anytime from the top bar. Simplified-Chinese browsers get Traditional Chinese, and the 萬 / 億 unit keeps its Chinese suffix in the English UI (pick K / M there) |
 | **Import & export** | Import balances from CSV with a server-checked preview, creating the accounts it names (optional `kind`, `currency` columns); export a spreadsheet CSV or a CSV that re-imports as is; self-hosted also offers a full `.db` download and daily backups |
 
 ## Quick start
@@ -55,8 +55,7 @@ wealth answers just that. Record a balance for each account (bank, brokerage, ho
 ```sh
 git clone https://github.com/SammyLin/wealth.git
 cd wealth
-cp .env.example .env          # set WEALTH_PASS
-docker compose up -d --build  # http://127.0.0.1:8080, user "me"
+docker compose up -d --build  # http://127.0.0.1:8080, no password while it stays on 127.0.0.1
 ```
 
 `--build` builds the image from your checkout, which always works. Once the first release is out (v2.0.0), plain `docker compose up -d` pulls the published image instead (`ghcr.io/sammylin/wealth`, amd64 and arm64, built by `.github/workflows/release.yml`); until then the pull fails and compose falls back to building.
@@ -92,10 +91,10 @@ Then:
 
 ## Self-host
 
-A single binary with SQLite on disk, or Docker (data in the `wealth-data` volume; `WEALTH_PASS` comes from `.env`):
+A single binary with SQLite on disk, or Docker (data in the `wealth-data` volume; `WEALTH_PASS`, optional while the port stays on 127.0.0.1, comes from `.env`):
 
 ```sh
-cp .env.example .env && $EDITOR .env   # set WEALTH_PASS
+cp .env.example .env && $EDITOR .env   # optional: set WEALTH_PASS
 docker compose up -d                  # pulls ghcr.io/sammylin/wealth:latest (after the first release; --build before that)
 ```
 
@@ -110,6 +109,10 @@ WEALTH_PASS=secret ./wealth           # ./wealth from a release or `go build` (Q
 | `WEALTH_USER` / `WEALTH_PASS` | `me` / empty | Basic auth |
 | `WEALTH_HOSTS` | empty | Without a password only `localhost` / `127.0.0.1` host names are served (DNS-rebinding guard); list extra names here, comma-separated |
 | `WEALTH_BACKUP_DIR` | `backups` | Daily backup, newest 30 kept |
+| `WEALTH_NO_PASS` | empty | `1` allows a non-localhost `WEALTH_ADDR` without a password (compose sets it, since it publishes the port on 127.0.0.1 only); the host-name guard still applies |
+| `WEALTH_FONTS` | empty | `system` skips the web fonts (no third-party requests; README "Fonts") |
+
+`wealth --version` prints the build's version; `/healthz` answers `ok <version>`.
 
 **Bind-mounting a folder instead of the volume:** the container runs as uid 10001, so the folder must be writable by it: `mkdir data && sudo chown 10001 data`, then `- ./data:/data` in `compose.yaml`.
 
@@ -123,7 +126,7 @@ wealth.example.com {
 
 Writes are refused when the browser's `Origin` doesn't match the host the server sees, so the proxy must pass the original host along. Caddy and Traefik keep it by default; nginx's `proxy_pass` sends its upstream address, so add `proxy_set_header Host $host;` (or `X-Forwarded-Host`, which the server also honours).
 
-**Fonts:** the UI loads Fraunces from Google Fonts and GenRyuMin / MiSans from font.emtech.cc, the only third-party requests it makes. They are optional: blocked or removed, the UI falls back to system fonts. To self-host them, download the CSS and font files, point the URLs in `web/public/boot.js` at your copies, and adjust `style-src` / `font-src` in the CSP (`internal/ledger/router.go`) before building.
+**Fonts:** the UI loads Fraunces from Google Fonts and GenRyuMin / MiSans from font.emtech.cc, the only third-party requests it makes. They are optional: blocked or removed, the UI falls back to system fonts. Set `WEALTH_FONTS=system` (self-hosted server and Docker) to skip them entirely: no third-party request is made and the CSP no longer allows those hosts. To self-host them, download the CSS and font files, point the URLs in `web/public/boot.js` at your copies, and adjust `style-src` / `font-src` in the CSP (`internal/ledger/router.go`) before building.
 
 **Hardening:** every response carries a CSP that allows scripts from the app's own origin only. A wrong Basic Auth password waits a second before its 401, one guess at a time, so guessing is slow; for per-IP lockouts put the proxy's rate limiting (or fail2ban on its log) in front.
 

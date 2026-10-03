@@ -43,7 +43,7 @@ wealth 只做這件事。每個帳戶(銀行、證券、房子、房貸)偶爾�
 | **多幣別** | 每筆紀錄存當天匯率,「記一筆」自動帶入;基準幣別可設定 |
 | **全部可改** | 帳本名稱、帳戶、過去每筆餘額、貸款、大事都能編輯或刪除 |
 | **自訂版面** | 首頁區塊可排序、隱藏;淺色/深色/跟隨系統 |
-| **中英雙語** | 介面跟著瀏覽器語言,右上角隨時切換 |
+| **中英雙語** | 介面跟著瀏覽器語言,右上角隨時切換。簡體中文瀏覽器會看到繁體中文;英文介面選「萬」時單位仍顯示萬/億(英文介面建議用 K / M) |
 | **匯入與匯出** | 從 CSV 匯入餘額,先由伺服器檢查並預覽,沒有的帳戶一起建立(可加 `kind`、`currency` 欄);匯出試算表 CSV,或可以直接匯回來的明細 CSV;自架版另有完整 `.db` 下載與每日自動備份 |
 
 ## 快速開始
@@ -53,8 +53,7 @@ wealth 只做這件事。每個帳戶(銀行、證券、房子、房貸)偶爾�
 ```sh
 git clone https://github.com/SammyLin/wealth.git
 cd wealth
-cp .env.example .env          # 設定 WEALTH_PASS
-docker compose up -d --build  # http://127.0.0.1:8080,帳號 me
+docker compose up -d --build  # http://127.0.0.1:8080,只開在 127.0.0.1 時不用密碼
 ```
 
 `--build` 用你這份程式碼建置映像檔,一定能跑。第一個版本(v2.0.0)發布後,直接 `docker compose up -d` 就會拉已發布的映像檔(`ghcr.io/sammylin/wealth`,amd64 和 arm64,由 `.github/workflows/release.yml` 建置);在那之前拉不到,compose 會改成自己建置。
@@ -93,7 +92,7 @@ make seed                     # 選用,在另一個終端機跑:塞一份示範�
 單一執行檔 + SQLite,資料存在本機檔案;或用 Docker(資料在 `wealth-data` volume,`WEALTH_PASS` 從 `.env` 讀):
 
 ```sh
-cp .env.example .env && $EDITOR .env   # 設定 WEALTH_PASS
+cp .env.example .env && $EDITOR .env   # 選用:設定 WEALTH_PASS(埠只綁 127.0.0.1 時可留空)
 docker compose up -d                  # 拉 ghcr.io/sammylin/wealth:latest(第一個版本發布後;在那之前加 --build)
 ```
 
@@ -108,6 +107,10 @@ WEALTH_PASS=secret ./wealth           # ./wealth 來自 Releases 或 go build(�
 | `WEALTH_USER` / `WEALTH_PASS` | `me` / 空 | basic auth |
 | `WEALTH_HOSTS` | 空 | 沒設密碼時只接受 `localhost`/`127.0.0.1` 這些主機名稱(防 DNS rebinding);其他名稱用逗號列在這裡 |
 | `WEALTH_BACKUP_DIR` | `backups` | 每天自動備份一份,保留最近 30 份 |
+| `WEALTH_NO_PASS` | 空 | 設 `1` 允許不設密碼時監聽非本機位址(compose 會設,因為它只把埠開在 127.0.0.1);主機名稱檢查照樣生效 |
+| `WEALTH_FONTS` | 空 | 設 `system` 不載入網路字型(不發第三方請求;見「字型」) |
+
+`wealth --version` 印出版本;`/healthz` 回 `ok <版本>`。
 
 **改用掛載資料夾而不是 volume:** 容器以 uid 10001 執行,資料夾要讓它寫得進去:`mkdir data && sudo chown 10001 data`,再把 `compose.yaml` 改成 `- ./data:/data`。
 
@@ -121,7 +124,7 @@ wealth.example.com {
 
 瀏覽器送來的 `Origin` 和伺服器看到的主機不同時會拒絕寫入,所以代理要把原本的主機轉送過來。Caddy 和 Traefik 預設就會保留;nginx 的 `proxy_pass` 預設送的是上游位址,請加 `proxy_set_header Host $host;`(或 `X-Forwarded-Host`,伺服器也認)。
 
-**字型:** 介面從 Google Fonts 載入 Fraunces、從 font.emtech.cc 載入源流明體與 MiSans,這是它唯一的第三方請求。字型是選用的:被擋掉或移除時會改用系統字型。想自己放字型,把 CSS 和字型檔下載下來,建置前把 `web/public/boot.js` 裡的網址改指向你的檔案,並調整 CSP(`internal/ledger/router.go`)的 `style-src`、`font-src`。
+**字型:** 介面從 Google Fonts 載入 Fraunces、從 font.emtech.cc 載入源流明體與 MiSans,這是它唯一的第三方請求。字型是選用的:被擋掉或移除時會改用系統字型。設定 `WEALTH_FONTS=system`(自架伺服器與 Docker)就完全不載入,不發出任何第三方請求,CSP 也不再允許那兩個網域。想自己放字型,把 CSS 和字型檔下載下來,建置前把 `web/public/boot.js` 裡的網址改指向你的檔案,並調整 CSP(`internal/ledger/router.go`)的 `style-src`、`font-src`。
 
 **安全強化:** 每個回應都帶 CSP,只允許同一來源的 script。basic auth 密碼錯誤時會等一秒才回 401,而且一次只處理一個錯誤嘗試,猜密碼會很慢;要依 IP 鎖定,請用反向代理的流量限制(或拿它的 log 給 fail2ban)。
 

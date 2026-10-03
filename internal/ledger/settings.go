@@ -11,8 +11,7 @@ import (
 // putSettings is PUT /api/settings: a partial update; unknown keys are ignored, every value is checked first.
 func (h *api) putSettings(c *gin.Context) {
 	var in map[string]string
-	if c.ShouldBindJSON(&in) != nil {
-		bad(c, http.StatusBadRequest, "格式不正確")
+	if !bindJSON(c, &in) {
 		return
 	}
 	ctx := c.Request.Context()
@@ -61,6 +60,11 @@ func (h *api) putSettings(c *gin.Context) {
 				bad(c, http.StatusBadRequest, "版面設定要是 4 KB 以內的 JSON,區塊只能是 trend、mix、sheet、loans、events,各一次")
 				return
 			}
+		case "demo", "stale_muted":
+			if v != "" && (len(v) > maxLayoutBytes || !validIDs(v, k == "demo")) {
+				bad(c, http.StatusBadRequest, "格式不正確")
+				return
+			}
 		default:
 			if len([]rune(v)) > 60 {
 				bad(c, http.StatusBadRequest, "文字太長")
@@ -99,6 +103,24 @@ func validLayout(v string) bool {
 			return false
 		}
 		seen[s.ID] = true
+	}
+	return true
+}
+
+// validIDs: a JSON list of ids ([1,2]), or with obj an object of such lists keyed accounts / loans / events.
+func validIDs(v string, obj bool) bool {
+	if !obj {
+		var ids []int64
+		return json.Unmarshal([]byte(v), &ids) == nil
+	}
+	var m map[string][]int64
+	if json.Unmarshal([]byte(v), &m) != nil {
+		return false
+	}
+	for k := range m {
+		if k != "accounts" && k != "loans" && k != "events" {
+			return false
+		}
 	}
 	return true
 }

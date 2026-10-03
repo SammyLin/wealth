@@ -1,5 +1,6 @@
 // English for features/loans. Keys are the Chinese source strings; "{}" marks a T`` interpolation.
 export const en: Record<string, string> = {
+  "貸款只能連結到負債類別的帳戶": "A loan can only link to an account in a liability class",
   // section
   "每個月要繳多少、寬限期什麼時候結束、月付什麼時候會跳。": "What you pay each month, when interest-only ends, and when the payment jumps.",
   "新增貸款": "Add loan",

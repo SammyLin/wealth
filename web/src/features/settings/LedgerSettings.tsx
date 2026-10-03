@@ -6,7 +6,8 @@ import { Check, Lock, Save } from "lucide-react"
 import type { Settings } from "../../api/types"
 import { useLedgerState } from "../../api/useLedger"
 import { t } from "../../i18n"
-import { CURRENCIES } from "../../lib/format"
+import { CURRENCIES, CURRENCY_RE } from "../../lib/format"
+import { DemoClearButton } from "../../shell/demo"
 import { useDirty } from "../../shell/dirty"
 const MAX_TEXT = 60 // server limit for title / subtitle (runes)
 
@@ -23,7 +24,7 @@ export function LedgerSettings() {
     initialValues: shown,
     validate: {
       title: (v) => (v.trim() ? null : t("名稱不能空白")),
-      base_currency: (v) => (/^[A-Za-z]{3}$/.test(v.trim()) ? null : t("基準幣別要是三個英文字母,例如 TWD、USD")),
+      base_currency: (v) => (CURRENCY_RE.test(v.trim().toUpperCase()) ? null : t("基準幣別要是三個英文字母,例如 TWD、USD")),
     },
   })
 
@@ -63,8 +64,9 @@ export function LedgerSettings() {
           autoCapitalize="characters"
           {...form.getInputProps("base_currency")}
         />
-        <Group justify="flex-end">
-          <Button type="submit" leftSection={<Save size={16} />} loading={saving} disabled={!form.isDirty()}>
+        <Group justify="space-between">
+          <DemoClearButton />
+          <Button ml="auto" type="submit" leftSection={<Save size={16} />} loading={saving} disabled={!form.isDirty()}>
             {t("儲存")}
           </Button>
         </Group>

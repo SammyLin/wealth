@@ -229,17 +229,11 @@ export function CsvImport() {
               const set = (patch: Partial<Pick>) => setPicks((m) => ({ ...m, [u.name]: { ...p, ...patch } }))
               const kindName = t(state.kinds.find((k) => k.key === p.kind)?.name ?? "")
               return (
-                <Group key={u.name} gap="xs" wrap="wrap" align="center">
-                  <Stack gap={0} style={{ flex: "1 1 80px", minWidth: 0 }}>
-                    <Text fz="sm" fw={500} style={{ overflowWrap: "anywhere" }}>
-                      {u.name}
-                    </Text>
-                    {p.guessed && (
-                      <Text fz="xs" c="warn" id={`guess-${i}`}>
-                        {T`沒有「${u.kind}」這個類別,先用「${kindName}」`}
-                      </Text>
-                    )}
-                  </Stack>
+                <Stack key={u.name} gap={2}>
+                <Group gap="xs" wrap="wrap" align="center">
+                  <Text fz="sm" fw={500} style={{ flex: "1 1 80px", minWidth: 0, overflowWrap: "anywhere" }}>
+                    {u.name}
+                  </Text>
                   {/* the two pickers stay side by side; on a narrow screen they wrap under the name together */}
                   <Group gap="xs" wrap="nowrap">
                     <KindSelect
@@ -260,6 +254,13 @@ export function CsvImport() {
                     />
                   </Group>
                 </Group>
+                {/* under the whole row, so it reads on one line instead of wrapping in the narrow name column */}
+                {p.guessed && (
+                  <Text fz="xs" c="warn" id={`guess-${i}`}>
+                    {T`沒有「${u.kind}」這個類別,先用「${kindName}」`}
+                  </Text>
+                )}
+                </Stack>
               )
             })}
           </Stack>

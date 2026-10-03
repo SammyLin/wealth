@@ -2,14 +2,13 @@ import { useState } from "react"
 import { Anchor, Autocomplete, Button, Card, EmptyState, Group, Input, SegmentedControl, SimpleGrid, Stack, Text } from "@mantine/core"
 import { notifications } from "@mantine/notifications"
 import { FileUp, Plus, Sprout } from "lucide-react"
-import * as api from "../api/client"
 import { useLedgerState } from "../api/useLedger"
 import type { Settings, Unit } from "../api/types"
 import { T, t, useLang } from "../i18n"
-import { demoLedger } from "../lib/demo"
-import { CURRENCIES, CURRENCY_RE, fmtMoney, todayISO } from "../lib/format"
+import { CURRENCIES, CURRENCY_RE, fmtMoney } from "../lib/format"
 import { SEEDED } from "../lib/kinds"
 import { askConfirm } from "./confirm"
+import { loadDemo } from "./demo"
 import { useOpenDialog } from "./dialogs"
 
 // Countries whose currency a browser locale implies; anything else keeps the server default.
@@ -38,7 +37,6 @@ function localCurrency(lang: string): string | undefined {
 // A ledger outside Taiwan gets class names that fit it better: "TW stocks" / "US stocks" become "Stocks" /
 // "Foreign stocks" (keys stay; only names change).
 const NON_TWD: Record<string, string> = { tw_stock: "股票", us_stock: "海外股票" }
-const DEFAULT_TEXT = ["我的帳本", "只記餘額,看見長期趨勢"]
 
 /**
  * Empty ledger: settle the two things that are hard to change later (the base currency locks with the first
@@ -58,8 +56,9 @@ export function FirstRun() {
   const unitNow = unit ?? (lang === "en" && s.unit === "wan" ? "k" : s.unit)
   const validBase = CURRENCY_RE.test(baseNow)
 
-  // Settings, plus the seeded names written in the language the ledger starts in (an English ledger stores
-  // "My ledger" and "Bank", not Chinese keys), then on to adding accounts or importing a spreadsheet.
+  // Settings, plus the seeded class names that fit the base currency, then on to adding accounts or importing a
+  // spreadsheet. Untouched defaults stay as their Chinese keys, which every view translates (t()), so a ledger
+  // started in English still reads in Chinese for a 中文 viewer and the other way round.
   const start = async (next: "accounts" | "import") => {
     if (await settle(baseNow)) open(next)
   }
@@ -68,14 +67,9 @@ export function FirstRun() {
     const patch: Partial<Settings> = {}
     if (baseNow !== s.base_currency) patch.base_currency = baseNow
     if (unitNow !== s.unit) patch.unit = unitNow
-    if (lang === "en") {
-      if (s.title === DEFAULT_TEXT[0]) patch.title = t(s.title)
-      if (s.subtitle === DEFAULT_TEXT[1]) patch.subtitle = t(s.subtitle)
-    }
     const renames = state.kinds.flatMap((k) => {
       if (SEEDED[k.key] !== k.name) return [] // renamed by the user already
-      const zh = (baseNow !== "TWD" && NON_TWD[k.key]) || k.name
-      const name = lang === "en" ? t(zh) : zh
+      const name = (baseNow !== "TWD" && NON_TWD[k.key]) || k.name
       return name === k.name ? [] : [{ ...k, name }]
     })
     setBusy(true)
@@ -91,25 +85,17 @@ export function FirstRun() {
   }
 
   // A sample household (TWD base, two USD accounts, a mortgage) written into this empty ledger, for trying the
-  // app out. Plain API calls and one refresh at the end, instead of ~20 refreshes through useLedger.
-  const loadDemo = () =>
+  // app out. Settings (and the dashboard banner) offer to clear it again.
+  const askDemo = () =>
     askConfirm({
       title: t("載入範例帳本?"),
-      body: t("會把一個範例家庭(8 個帳戶、30 個月的餘額、房貸和大事)寫進這個帳本,基準幣別設為 TWD。之後要自己記帳,刪掉 wealth.db(Docker 是 wealth-data volume)重新開始,或在「帳戶與類別」逐一刪除。"),
+      body: t("會把一個範例家庭(8 個帳戶、30 個月的餘額、房貸和大事)寫進這個帳本,基準幣別設為 TWD。看完可以在儀表板或「設定」一鍵清除範例資料。"),
       confirm: t("載入範例"),
       onConfirm: async () => {
         if (!(await settle("TWD"))) return
         setBusy(true)
         try {
-          const today = todayISO()
-          const d = demoLedger(today.slice(8) >= "15" ? today : new Date(Date.UTC(+today.slice(0, 4), +today.slice(5, 7) - 2, 15)).toISOString().slice(0, 10), lang === "en")
-          const ids: number[] = []
-          for (const a of d.accounts) ids.push((await api.createAccount(a)).id)
-          const snaps = d.balances.map(({ account, ...b }) => ({ account_id: ids[account], ...b }))
-          for (let i = 0; i < snaps.length; i += 200) await api.putSnapshots(snaps.slice(i, i + 200))
-          for (const e of d.events) await api.saveEvent(e)
-          for (const { account, ...l } of d.loans) await api.saveLoan({ ...l, account_id: ids[account] })
-          await api.putSettings({ title: d.title })
+          await loadDemo(lang === "en")
         } catch (e) {
           notifications.show({ color: "down", title: t("操作失敗"), message: (e as Error).message })
         } finally {
@@ -180,7 +166,7 @@ export function FirstRun() {
             </Group>
             <Text fz="xs" c="dimmed" ta="center">
               {t("只是想先看看?")}{" "}
-              <Anchor component="button" type="button" fz="inherit" disabled={busy} onClick={loadDemo}>
+              <Anchor component="button" type="button" fz="inherit" disabled={busy} onClick={askDemo}>
                 {t("載入範例帳本")}
               </Anchor>
             </Text>

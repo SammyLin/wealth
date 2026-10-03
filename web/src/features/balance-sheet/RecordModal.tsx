@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState, type FormEvent } from "react"
 import { Box, Button, Group, Modal, Stack, Text } from "@mantine/core"
 import { DateInput } from "@mantine/dates"
-import { useMediaQuery } from "@mantine/hooks"
+import { useHotkeys } from "@mantine/hooks"
+import { useIsPhone } from "../../shell/useIsPhone"
 import { ArrowRight, CalendarDays, Check } from "lucide-react"
 import { getFx } from "../../api/client"
 import { useLedgerState, useMoney } from "../../api/useLedger"
 import { T, t } from "../../i18n"
 import { fmtDate, fmtInput, parseDay, todayISO } from "../../lib/format"
 import { askConfirm } from "../../shell/confirm"
+import { DirtyContext, useDirty, useGuardedClose } from "../../shell/dirty"
 import { notifyUndo } from "../../shell/undo"
 import { RecordRow } from "./RecordRow"
 import type { Account } from "../../api/types"
@@ -17,7 +19,7 @@ type Props = { opened: boolean; onClose: () => void }
 
 /** 記一筆: one balance per active account for a date. Only rows the user changed are saved. */
 export function RecordModal({ opened, onClose }: Props) {
-  const fullScreen = useMediaQuery("(max-width: 48em)")
+  const fullScreen = useIsPhone()
   // a fresh form (prefilled from the latest state) every time the dialog opens
   const [session, setSession] = useState(0)
   const [wasOpen, setWasOpen] = useState(opened)
@@ -26,27 +28,17 @@ export function RecordModal({ opened, onClose }: Props) {
     if (opened) setSession((s) => s + 1)
   }
   // Typed balances are never thrown away silently: every close path (Cancel, Esc, X, backdrop) asks first.
-  // Both this dialog and the confirm listen for Esc on window, so while the confirm is up (and until the
-  // event that closed it has finished) further close requests are ignored instead of opening a second one.
   const [unsaved, setUnsaved] = useState(0)
-  const confirming = useRef(false)
-  const requestClose = () => {
-    if (confirming.current) return
-    if (!unsaved) return onClose()
-    confirming.current = true
-    askConfirm({
-      title: T`放棄 ${unsaved} 筆未儲存的餘額?`,
-      body: t("關掉後這次填的數字都不會保留。"),
-      confirm: t("放棄"),
-      cancel: t("繼續填"),
-      danger: true,
-      onConfirm: onClose,
-      onClose: () => setTimeout(() => (confirming.current = false)),
-    })
-  }
+  const { dirty, close: requestClose } = useGuardedClose(onClose, {
+    title: T`放棄 ${unsaved} 筆未儲存的餘額?`,
+    body: t("關掉後這次填的數字都不會保留。"),
+    cancel: t("繼續填"),
+  })
   return (
     <Modal opened={opened} onClose={requestClose} title={t("記一筆")} size="xl" fullScreen={fullScreen}>
-      <RecordForm key={session} onClose={onClose} onCancel={requestClose} onUnsaved={setUnsaved} focusFirst={!fullScreen} />
+      <DirtyContext.Provider value={dirty}>
+        <RecordForm key={session} onClose={onClose} onCancel={requestClose} onUnsaved={setUnsaved} focusFirst={!fullScreen} />
+      </DirtyContext.Provider>
     </Modal>
   )
 }
@@ -120,6 +112,7 @@ function RecordForm({ onClose, onCancel, onUnsaved, focusFirst }: FormProps) {
   const diff = after - before
   const touched = active.filter((a) => drafts[a.id].touched).length
   useEffect(() => onUnsaved(touched), [touched, onUnsaved])
+  useDirty(touched > 0)
   // A typed row whose rate is still on its way would otherwise save with the old (or no) rate.
   const waitingFx = active.some((a) => drafts[a.id].touched && fxLoading.includes(a.currency))
 
@@ -137,7 +130,13 @@ function RecordForm({ onClose, onCancel, onUnsaved, focusFirst }: FormProps) {
       return next
     })
 
+  // Set when a save starts and cleared only if it fails: a second Enter (the input keeps focus while the dialog
+  // plays its close transition) or a second confirm click must not post the batch again.
+  const submitted = useRef(false)
+  const overwriteAsked = useRef(false)
   const save = async () => {
+    if (submitted.current) return
+    submitted.current = true
     setSaving(true)
     // Undo puts back what each saved row replaced: the earlier record that day, or no record at all
     // (a batch saved under the wrong date comes back out in one click).
@@ -156,9 +155,10 @@ function RecordForm({ onClose, onCancel, onUnsaved, focusFirst }: FormProps) {
         message: T`${changed.length} 個帳戶 · 淨資產 ${money(after)}(${money(diff, { signed: true })})`,
         undo,
       })
+      ;(document.activeElement as HTMLElement | null)?.blur()
       onClose()
     } catch {
-      /* useLedger already showed the error; keep the form */
+      submitted.current = false /* useLedger already showed the error; keep the form */
     } finally {
       setSaving(false)
     }
@@ -166,7 +166,7 @@ function RecordForm({ onClose, onCancel, onUnsaved, focusFirst }: FormProps) {
 
   const submit = (e?: FormEvent) => {
     e?.preventDefault()
-    if (waitingFx) return
+    if (waitingFx || saving || submitted.current) return
     if (firstError >= 0) {
       const p = rows[firstError].parsed
       return (p.kind === "error" && p.field === "fx" ? fxInputs : amountInputs).current[firstError]?.focus()
@@ -174,14 +174,20 @@ function RecordForm({ onClose, onCancel, onUnsaved, focusFirst }: FormProps) {
     if (!changed.length || !date) return
     const replaced = changed.filter((r) => r.parsed.kind === "ok" && r.parsed.overwrites).map((r) => r.a.name)
     if (!replaced.length) return void save()
+    if (overwriteAsked.current) return // a second Enter before focus moved into the confirm: one prompt only
+    overwriteAsked.current = true
     askConfirm({
       title: T`覆蓋 ${fmtDate(date)} 的紀錄?`,
       body: T`這些帳戶在 ${fmtDate(date)} 已經有餘額,會改成這次填的數字:${replaced}`,
       confirm: t("覆蓋"),
       danger: true,
       onConfirm: () => void save(),
+      onClose: () => (overwriteAsked.current = false),
     })
   }
+
+  // mod+Enter saves from any field, the date and rate fields included (no tags ignored)
+  useHotkeys([["mod+Enter", () => submit()]], [])
 
   return (
     <form onSubmit={submit} noValidate>

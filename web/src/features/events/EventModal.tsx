@@ -1,8 +1,8 @@
 import { useState } from "react"
-import { Button, Group, Modal, Stack, Text, TextInput, useMantineTheme } from "@mantine/core"
+import { Button, Group, Modal, Stack, Text, TextInput } from "@mantine/core"
 import { DatePickerInput } from "@mantine/dates"
 import { useForm } from "@mantine/form"
-import { useMediaQuery } from "@mantine/hooks"
+import { useIsPhone } from "../../shell/useIsPhone"
 import { notifications } from "@mantine/notifications"
 import { CalendarDays, Check, Flag } from "lucide-react"
 import type { Event } from "../../api/types"
@@ -15,8 +15,7 @@ type Props = { opened: boolean; onClose: () => void; event?: Event | null }
 
 /** Add (no `event`) or edit one life event. Full-screen under `sm`. */
 export function EventModal({ opened, onClose, event }: Props) {
-  const theme = useMantineTheme()
-  const mobile = useMediaQuery(`(max-width: ${theme.breakpoints.sm})`)
+  const mobile = useIsPhone()
   const { dirty, close } = useGuardedClose(onClose) // a typed title isn't dropped by Esc or a stray backdrop click
   return (
     <Modal opened={opened} onClose={close} fullScreen={mobile} title={t(event ? "編輯大事" : "新增大事")}>

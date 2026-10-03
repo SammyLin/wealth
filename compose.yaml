@@ -1,4 +1,5 @@
-# docker compose up -d --build   →  http://127.0.0.1:8080 (user: WEALTH_USER, default "me"; password: WEALTH_PASS)
+# docker compose up -d --build   →  http://127.0.0.1:8080 (no password needed locally; with WEALTH_PASS in .env,
+# user WEALTH_USER, default "me")
 # --build builds this checkout. Without it, compose pulls the image release.yml publishes on every v* tag; that
 # image exists from the first release (v2.0.0) on, and until then the pull fails over to the build: below.
 # Data (wealth.db and the daily backups/) lives in the "wealth-data" volume.
@@ -12,7 +13,10 @@ services:
       # removing 127.0.0.1 would send the Basic Auth password over plain HTTP.
       - "127.0.0.1:8080:8080"
     environment:
-      WEALTH_PASS: ${WEALTH_PASS:?Set WEALTH_PASS in .env (copy .env.example)}
+      # Optional while the port is bound to 127.0.0.1 above: with it empty only this machine can open the app.
+      # Set it (in .env) before exposing the port any further.
+      WEALTH_PASS: ${WEALTH_PASS:-}
+      WEALTH_NO_PASS: "1"
       WEALTH_USER: ${WEALTH_USER:-me}
     volumes:
       - wealth-data:/data

@@ -6,6 +6,7 @@ package main
 import (
 	"crypto/subtle"
 	"database/sql"
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -22,7 +23,11 @@ import (
 )
 
 func main() {
-	db, err := sql.Open("sqlite", envOr("WEALTH_DB", "wealth.db")+"?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)")
+	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
+		fmt.Println("wealth", ledger.Version)
+		return
+	}
+	db, err := sql.Open("sqlite", envOr("WEALTH_DB", "wealth.db")+"?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -40,17 +45,20 @@ func main() {
 		}
 		mw = append(mw, basicAuth(envOr("WEALTH_USER", "me"), pass, time.Second))
 	} else {
-		if !strings.HasPrefix(addr, "127.0.0.1:") && !strings.HasPrefix(addr, "localhost:") {
+		// WEALTH_NO_PASS=1: compose publishes the port on the host's 127.0.0.1 only, so the container's 0.0.0.0
+		// is still local; localHostsOnly below keeps rejecting any other Host name either way.
+		if !strings.HasPrefix(addr, "127.0.0.1:") && !strings.HasPrefix(addr, "localhost:") && os.Getenv("WEALTH_NO_PASS") != "1" {
 			log.Fatal("refusing to listen on a public address without WEALTH_PASS")
 		}
 		mw = append(mw, localHostsOnly(os.Getenv("WEALTH_HOSTS")))
 	}
+	ledger.SystemFonts = os.Getenv("WEALTH_FONTS") == "system"
 	r := ledger.New(db, true, mw...)
 	r.GET("/api/backup.db", ledger.DownloadBackup(db))
 
 	go ledger.AutoBackup(db, envOr("WEALTH_BACKUP_DIR", "backups"), 30)
 
-	log.Printf("wealth on http://%s", addr)
+	log.Printf("wealth %s on http://%s", ledger.Version, addr)
 	srv := &http.Server{Addr: addr, Handler: r, ReadHeaderTimeout: 10 * time.Second, IdleTimeout: 2 * time.Minute}
 	log.Fatal(srv.ListenAndServe())
 }

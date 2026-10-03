@@ -1,14 +1,15 @@
-import { Box, Button, Card, ColorSwatch, Group, Progress, SimpleGrid, Text, Title, Tooltip } from "@mantine/core"
-import { Clock, Minus, TrendingDown, TrendingUp } from "lucide-react"
+import { Box, Button, Card, ColorSwatch, Group, Menu, Progress, SimpleGrid, Text, Title, Tooltip } from "@mantine/core"
+import { BellOff, Clock, Minus, TrendingDown, TrendingUp } from "lucide-react"
 import type { Account, Kind, Row, State } from "../../api/types"
 import { useLedgerState, useMoney } from "../../api/useLedger"
 import { t, T } from "../../i18n"
 import { fmtDate, fmtPct, todayISO } from "../../lib/format"
 import { liquidityColor, liquidityLabel } from "../../lib/liquidity"
 import { useOpenDialog } from "../../shell/dialogs"
+import { mutedIds, mutePatch } from "../../shell/muted"
 import { Stat } from "../../shell/Stat"
 import { isStale } from "../balance-sheet/sheet"
-import { liquidityMix, movers, topAccount } from "./data"
+import { liquidityMix, movers, openings, topAccount } from "./data"
 import { useTrendRange } from "./range"
 
 /** Hero: net worth, change since the previous record, liquidity bar. Not a numbered section. */
@@ -56,7 +57,9 @@ export function Overview() {
             net
           )}
         </Title>
-        {prev && last && <Delta value={last.total - prev.total} base={prev.total} label={T`較上一筆紀錄(${fmtDate(prev.date)})`} />}
+        {prev && last && (
+          <Delta value={last.total - prev.total} opened={openings(state.accounts, state.kinds, prev.date, last.date)} base={prev.total} label={T`較上一筆紀錄(${fmtDate(prev.date)})`} />
+        )}
         {shown.length > 1 && <Movers from={shown[0]} to={shown[shown.length - 1]} label={label} kinds={state.kinds} accounts={state.accounts} />}
         <Stale state={state} />
       </Box>
@@ -65,8 +68,10 @@ export function Overview() {
   )
 }
 
-function Delta({ value, base, label }: { value: number; base: number; label: string }) {
+/** The change without the opening balances of accounts first recorded in between (shown on their own). */
+function Delta({ value: all, opened, base, label }: { value: number; opened: ReturnType<typeof openings>; base: number; label: string }) {
   const money = useMoney()
+  const value = all - opened.total
   const dir = value > 0 ? "up" : value < 0 ? "down" : null
   const Icon = dir === "up" ? TrendingUp : dir === "down" ? TrendingDown : Minus
   const color = dir ? `var(--wealth-${dir})` : "var(--mantine-color-dimmed)"
@@ -82,7 +87,19 @@ function Delta({ value, base, label }: { value: number; base: number; label: str
       <Text fz="sm" c="dimmed">
         {label}
       </Text>
+      <NewAccounts opened={opened} />
     </Group>
+  )
+}
+
+/** "New accounts +50.6萬 (2)": balances that started being tracked, which aren't growth. */
+function NewAccounts({ opened }: { opened: ReturnType<typeof openings> }) {
+  const money = useMoney()
+  if (!opened.count) return null
+  return (
+    <Text fz="sm" c="dimmed" className="num">
+      {T`新帳戶 ${money(opened.total, { signed: true })}(${opened.count})`}
+    </Text>
   )
 }
 
@@ -93,7 +110,7 @@ function Delta({ value, base, label }: { value: number; base: number; label: str
  * liabilities, the note in brackets give the effect on net worth.
  */
 function Movers({ from, to, label, kinds, accounts }: { from: Row; to: Row; label: string; kinds: Kind[]; accounts: Account[] }) {
-  const top = movers(from, to, kinds).slice(0, 3)
+  const top = movers(from, to, kinds, openings(accounts, kinds, from.date, to.date).byKind).slice(0, 3)
   const acct = topAccount(accounts, kinds, from.date, to.date)
   if (!top.length) return null
   const kindOf = (key: string) => kinds.find((k) => k.key === key)
@@ -140,11 +157,16 @@ function Mover({ color, name, balance, liability, inline }: { color: string; nam
   )
 }
 
-/** A nudge when active accounts haven't been updated for a while: their old balance is still being carried. */
+/**
+ * A nudge when active accounts haven't been updated for a while: their old balance is still being carried.
+ * A house revalued twice a year can be muted from here (and unmuted in its account form).
+ */
 function Stale({ state }: { state: State }) {
   const open = useOpenDialog()
+  const { saveSettings } = useLedgerState()
   const today = todayISO()
-  const stale = state.accounts.filter((a) => isStale(a, today))
+  const muted = mutedIds(state.settings)
+  const stale = state.accounts.filter((a) => isStale(a, today) && !muted.includes(a.id))
   if (!stale.length) return null
   const names = stale.slice(0, 4).map((a) => a.name)
   return (
@@ -154,6 +176,20 @@ function Stale({ state }: { state: State }) {
       <Button variant="subtle" size="compact-sm" onClick={() => open("record")}>
         {t("更新餘額")}
       </Button>
+      <Menu position="bottom-start">
+        <Menu.Target>
+          <Button variant="subtle" color="gray" size="compact-sm" leftSection={<BellOff size={14} />}>
+            {t("不再提醒…")}
+          </Button>
+        </Menu.Target>
+        <Menu.Dropdown>
+          {stale.map((a) => (
+            <Menu.Item key={a.id} onClick={() => saveSettings(mutePatch(state.settings, a.id, true)).catch(() => {})}>
+              {a.name}
+            </Menu.Item>
+          ))}
+        </Menu.Dropdown>
+      </Menu>
     </Group>
   )
 }

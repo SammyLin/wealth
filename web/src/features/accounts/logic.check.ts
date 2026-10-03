@@ -1,4 +1,4 @@
-// Self-check, not bundled: `node src/features/accounts/logic.check.ts` (Node ≥ 23 strips the types); `npm run check` runs every *.check.ts with node --test.
+// Self-check, not bundled: `node src/features/accounts/logic.check.ts` (Node 22.18+ strips the types); `npm run check` runs every *.check.ts with node --test.
 import assert from "node:assert/strict"
 import { KEY_RE, moved, slugKey, staleSearch } from "./logic.ts"
 

@@ -1,5 +1,5 @@
 import { useId, useState, type ReactNode } from "react"
-import { Box, Button, Collapse, Divider, EmptyState, Flex, Group, Stack, Text, Title, UnstyledButton } from "@mantine/core"
+import { Box, Button, Collapse, Divider, EmptyState, Flex, Group, SimpleGrid, Stack, Text, Title, UnstyledButton } from "@mantine/core"
 import { useLocalStorage } from "@mantine/hooks"
 import { Archive, ArchiveRestore, ChevronRight, Plus, WalletCards } from "lucide-react"
 import { useLedgerState, useMoney } from "../../api/useLedger"
@@ -7,6 +7,7 @@ import { T, t } from "../../i18n"
 import { fmtPct } from "../../lib/format"
 import { useOpenDialog } from "../../shell/dialogs"
 import { SectionCard } from "../../shell/SectionCard"
+import { Stat } from "../../shell/Stat"
 import { AccountRow } from "./AccountRow"
 import { buildSheet, type Group as SheetGroup } from "./sheet"
 
@@ -44,7 +45,7 @@ export function BalanceSheet() {
   const actions = (
     <>
       {archivedToggle}
-      <Button variant="default" size="xs" leftSection={<Plus size={14} />} onClick={() => open("accounts")}>
+      <Button variant="default" size="xs" leftSection={<Plus size={14} />} onClick={() => open("accounts", "new")}>
         {t("新增帳戶")}
       </Button>
     </>
@@ -97,6 +98,13 @@ export function BalanceSheet() {
                 {money(sheet.net)}
               </Text>
             </Group>
+            {/* the ratios fill the column beside a long assets list, where the reader is already comparing the two sides */}
+            {sheet.assets > 0 && (
+              <SimpleGrid cols={2} spacing="sm" py="sm" style={{ borderTop: "1px dashed var(--wealth-rule)" }}>
+                <Stat label={t("負債比")} value={fmtPct(sheet.debt / sheet.assets, 0)} />
+                <Stat label={t("淨資產佔資產")} value={fmtPct(sheet.net / sheet.assets, 0)} align="right" />
+              </SimpleGrid>
+            )}
           </Column>
         </Flex>
       )}

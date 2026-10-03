@@ -106,8 +106,6 @@ export const en: Record<string, string> = {
   "載入範例帳本": "Load a demo ledger",
   "載入範例帳本?": "Load a demo ledger?",
   "載入範例": "Load demo",
-  "會把一個範例家庭(8 個帳戶、30 個月的餘額、房貸和大事)寫進這個帳本,基準幣別設為 TWD。之後要自己記帳,刪掉 wealth.db(Docker 是 wealth-data volume)重新開始,或在「帳戶與類別」逐一刪除。":
-    "This writes a sample household (8 accounts, 30 months of balances, a mortgage and milestones) into this ledger, with TWD as the base currency. To start your own later, delete wealth.db (the wealth-data volume on Docker), or delete the accounts one by one under Accounts & classes.",
   // shared: undo toasts, chart tables
   "復原": "Undo",
   "已復原": "Undone",
@@ -116,4 +114,17 @@ export const en: Record<string, string> = {
   "排序值超出範圍": "Sort value out of range",
   "已經有同名的帳戶:{}": "An account named {} already exists",
   "日期要在 1900–2199 年之間": "The date must be between 1900 and 2199",
+  "會把一個範例家庭(8 個帳戶、30 個月的餘額、房貸和大事)寫進這個帳本,基準幣別設為 TWD。看完可以在儀表板或「設定」一鍵清除範例資料。":
+    "Writes a sample household (8 accounts, 30 months of balances, a mortgage and milestones) into this ledger and sets the base currency to TWD. Clear the demo data in one click from the dashboard or Settings when you're done.",
+  "這是範例帳本": "This is a demo ledger",
+  "看夠了就清掉範例資料,從自己的帳戶開始;基準幣別也會解鎖。": "Done looking? Clear the demo data and start with your own accounts; the base currency unlocks too.",
+  "清除範例資料?": "Clear the demo data?",
+  "會刪掉範例的帳戶、餘額、貸款和大事;你自己新增的不受影響。": "Removes the demo's accounts, balances, loans and milestones. Anything you added yourself stays.",
+  "清除範例": "Clear demo",
+  "清除範例資料,重新開始": "Clear demo data and start fresh",
+  "90 天沒更新時提醒": "Remind me after 90 days without an update",
+  "沒有叫「{}」的類別": "No class named “{}”",
+  "淨資產佔資產": "Net worth / assets",
+  "不再提醒…": "Stop reminding…",
+  "新帳戶 {}({})": "new accounts {} ({})",
 }

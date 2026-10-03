@@ -1,8 +1,10 @@
 package ledger
 
 import (
+	"bytes"
 	"io/fs"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -21,6 +23,10 @@ func serveSPA(r *gin.Engine) {
 	index, err := fs.ReadFile(dist, "index.html")
 	if err != nil {
 		index = []byte("<!doctype html><meta charset=utf-8><title>wealth</title><p>Frontend not built. Run <code>cd web && npm ci && npm run build</code>, then restart.")
+	}
+	if SystemFonts {
+		index = regexp.MustCompile(`\s*<link rel="preconnect"[^>]*>`).ReplaceAll(index, nil)
+		index = bytes.Replace(index, []byte("<html "), []byte(`<html data-fonts="system" `), 1)
 	}
 	files := http.FS(dist)
 	r.NoRoute(func(c *gin.Context) {

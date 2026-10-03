@@ -22,7 +22,7 @@ export function AppHeader() {
   return (
     <Container size="lg" h="100%">
       <Group h="100%" justify="space-between" wrap="nowrap" gap="md">
-        <UnstyledButton miw={0} onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>
+        <UnstyledButton miw={0} mih={40} onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>
           <Group gap="sm" wrap="nowrap">
           <ThemeIcon size={34} radius={10} color={dark ? "gold.5" : "gray.9"} aria-hidden>
             <BookOpenText size={18} color={dark ? "var(--mantine-color-dark-8)" : "var(--mantine-color-gold-1)"} />
@@ -70,7 +70,7 @@ export function AppHeader() {
             </Tooltip>
           </Group>
 
-          <Button leftSection={<PenLine size={16} />} disabled={!canRecord} onClick={() => open("record")}>
+          <Button leftSection={<PenLine size={16} />} disabled={!canRecord} aria-keyshortcuts="R" onClick={() => open("record")}>
             {t("記一筆")}
           </Button>
 

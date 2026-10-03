@@ -1,4 +1,4 @@
-// Self-check, not bundled: `node src/features/loans/math.check.ts` (Node ≥ 23 strips the types); `npm run check` runs every *.check.ts with node --test.
+// Self-check, not bundled: `node src/features/loans/math.check.ts` (Node 22.18+ strips the types); `npm run check` runs every *.check.ts with node --test.
 // Expected values come from internal/ledger/loan.go for the same inputs.
 import assert from "node:assert/strict"
 import { readFileSync } from "node:fs"

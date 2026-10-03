@@ -39,3 +39,22 @@ func TestBasicAuth(t *testing.T) {
 		t.Errorf("/healthz needs no credentials: %d", code)
 	}
 }
+
+func TestLocalHostsOnly(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(localHostsOnly("wealth.lan, NAS"))
+	r.GET("/", func(c *gin.Context) { c.String(http.StatusOK, "ok") })
+	for host, want := range map[string]int{
+		"localhost:8080": 200, "127.0.0.1": 200, "[::1]:8080": 200, "wealth.lan": 200, "nas:8080": 200,
+		"evil.example": http.StatusMisdirectedRequest, "evil.example:8080": http.StatusMisdirectedRequest, "": http.StatusMisdirectedRequest,
+	} {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Host = host
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, req)
+		if w.Code != want {
+			t.Errorf("Host %q: %d want %d", host, w.Code, want)
+		}
+	}
+}

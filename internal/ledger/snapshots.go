@@ -12,8 +12,7 @@ import (
 // putSnapshots is POST /api/snapshots: one form submits every account's balance for a date, upserted.
 func (h *api) putSnapshots(c *gin.Context) {
 	var in []Snapshot
-	if c.ShouldBindJSON(&in) != nil {
-		bad(c, http.StatusBadRequest, "格式不正確")
+	if !bindJSON(c, &in) {
 		return
 	}
 	if len(in) > maxBatchRows {
@@ -21,6 +20,10 @@ func (h *api) putSnapshots(c *gin.Context) {
 		return
 	}
 	for _, s := range in {
+		if !validDate(s.Date) {
+			bad(c, http.StatusBadRequest, "日期格式要是 YYYY-MM-DD,年份 1900–2199")
+			return
+		}
 		if futureDate(s.Date) {
 			bad(c, http.StatusBadRequest, "日期不能在未來")
 			return

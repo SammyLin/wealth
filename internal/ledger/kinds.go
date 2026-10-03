@@ -1,6 +1,7 @@
 package ledger
 
 import (
+	"cmp"
 	"net/http"
 	"strings"
 
@@ -10,7 +11,10 @@ import (
 // createKind is POST /api/kinds {key,name,color,liquidity,sort}: 409 when the key or the name is taken.
 func (h *api) createKind(c *gin.Context) {
 	var k Kind
-	if c.ShouldBindJSON(&k) != nil || !kindKeyRe.MatchString(k.Key) {
+	if !bindJSON(c, &k) {
+		return
+	}
+	if !kindKeyRe.MatchString(k.Key) {
 		bad(c, http.StatusBadRequest, "代號要是小寫英文開頭,2–32 個小寫英文、數字或底線")
 		return
 	}
@@ -21,8 +25,9 @@ func (h *api) createKind(c *gin.Context) {
 	ctx := c.Request.Context()
 	k.Name, k.Color = strings.TrimSpace(k.Name), strings.ToLower(k.Color)
 	// the uniqueness checks ride in the INSERT itself (D1 has no transactions), like the account guards
-	res, err := h.db.ExecContext(ctx, `INSERT INTO account_kinds (key, name, color, liquidity, sort) SELECT ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM account_kinds WHERE key=? OR lower(name)=lower(?))`,
-		k.Key, k.Name, k.Color, k.Liquidity, k.Sort, k.Key, k.Name)
+	names := nameAliases(k.Name)
+	res, err := h.db.ExecContext(ctx, `INSERT INTO account_kinds (key, name, color, liquidity, sort) SELECT ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM account_kinds WHERE key=? OR `+nameInSQL(len(names))+`)`,
+		append([]any{k.Key, k.Name, k.Color, k.Liquidity, k.Sort, k.Key}, names...)...)
 	if fail(c, err) {
 		return
 	}
@@ -46,7 +51,10 @@ func (h *api) orderKinds(c *gin.Context) {
 	var in struct {
 		Keys []string `json:"keys"`
 	}
-	if c.ShouldBindJSON(&in) != nil || len(in.Keys) > 500 {
+	if !bindJSON(c, &in) {
+		return
+	}
+	if len(in.Keys) > 500 {
 		bad(c, http.StatusBadRequest, "格式不正確")
 		return
 	}
@@ -68,8 +76,7 @@ func (h *api) orderKinds(c *gin.Context) {
 // updateKind is PUT /api/kinds/:key {name,color,liquidity,sort}. The key can't change: accounts point at it.
 func (h *api) updateKind(c *gin.Context) {
 	var k Kind
-	if c.ShouldBindJSON(&k) != nil {
-		bad(c, http.StatusBadRequest, "格式不正確")
+	if !bindJSON(c, &k) {
 		return
 	}
 	k.Key = c.Param("key")
@@ -79,8 +86,9 @@ func (h *api) updateKind(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 	k.Name, k.Color = strings.TrimSpace(k.Name), strings.ToLower(k.Color)
-	res, err := h.db.ExecContext(ctx, `UPDATE account_kinds SET name=?, color=?, liquidity=?, sort=? WHERE key=? AND NOT EXISTS (SELECT 1 FROM account_kinds WHERE lower(name)=lower(?) AND key<>?)`,
-		k.Name, k.Color, k.Liquidity, k.Sort, k.Key, k.Name, k.Key)
+	names := nameAliases(k.Name)
+	res, err := h.db.ExecContext(ctx, `UPDATE account_kinds SET name=?, color=?, liquidity=?, sort=? WHERE key=? AND NOT EXISTS (SELECT 1 FROM account_kinds WHERE key<>? AND `+nameInSQL(len(names))+`)`,
+		append([]any{k.Name, k.Color, k.Liquidity, k.Sort, k.Key, k.Key}, names...)...)
 	if fail(c, err) {
 		return
 	}
@@ -122,4 +130,24 @@ func (h *api) deleteKind(c *gin.Context) {
 		return
 	}
 	bad(c, http.StatusNotFound, "找不到這個類別")
+}
+
+// nameAliases is every stored name that would show as name in either UI language: the name itself plus the
+// seeded kinds it translates to or from, so an English ledger can't get a second "Bank" next to 銀行.
+func nameAliases(name string) []any {
+	en := cmp.Or(seededKindEn[name], name)
+	out := []any{name}
+	if en != name {
+		out = append(out, en)
+	}
+	for zh, e := range seededKindEn {
+		if strings.EqualFold(e, en) && zh != name {
+			out = append(out, zh)
+		}
+	}
+	return out
+}
+
+func nameInSQL(n int) string {
+	return "lower(name) IN (" + strings.TrimSuffix(strings.Repeat("lower(?),", n), ",") + ")"
 }

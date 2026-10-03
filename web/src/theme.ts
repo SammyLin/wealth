@@ -88,6 +88,10 @@ const makeTheme = (lang: Lang) => {
       Button: { defaultProps: { radius: "xl" } },
       ActionIcon: { defaultProps: { variant: "subtle", color: "gray", radius: "xl" } },
       Tooltip: { defaultProps: { withArrow: true, openDelay: 300 } },
+      // Mantine gives the close button no accessible name; every toast (Undo ones included) has one
+      Notification: { defaultProps: { closeButtonProps } },
+      // a color, so the checked "All" chip gets the per-scheme contrast text too (Chip's CSS default is white)
+      Chip: { defaultProps: { color: "gold" } },
       Badge: { defaultProps: { tt: "none" } }, // Mantine's default is uppercase ("6 ROWS")
       NumberInput: { defaultProps: { thousandSeparator: "," } },
       Alert: { defaultProps: { variant: "light" } },
@@ -137,6 +141,9 @@ export const cssVariablesResolver: CSSVariablesResolver = (theme) => ({
     "--mantine-color-body": "#28231d",
     "--mantine-color-text": "#ece3d0",
     "--mantine-color-placeholder": "#a99d87", // dark-2: 5.4:1 on the dark input
+    // hover lightens instead of darkening: ink on gold-6 was 4.2:1, on gold-4 it's 7.3:1
+    "--mantine-color-gold-filled-hover": gold[4],
+    "--mantine-primary-color-filled-hover": gold[4],
     "--wealth-paper": "#1d1914",
     "--wealth-paper-2": "#2f2922",
     "--wealth-rule": "#3a332a",

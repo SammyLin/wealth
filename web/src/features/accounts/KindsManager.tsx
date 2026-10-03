@@ -1,5 +1,5 @@
 import { useRef, useState } from "react"
-import { ActionIcon, Button, Card, Collapse, ColorInput, Group, Paper, Select, Stack, Text, TextInput, Tooltip } from "@mantine/core"
+import { ActionIcon, Button, Card, Collapse, ColorPicker, ColorSwatch, Group, Paper, Popover, Select, Stack, Text, TextInput, Tooltip } from "@mantine/core"
 import { notifications } from "@mantine/notifications"
 import { Check, Plus, Trash2 } from "lucide-react"
 import { useLedgerState } from "../../api/useLedger"
@@ -53,7 +53,7 @@ export function KindsManager() {
       </Collapse>
       <Stack gap="xs">
         {state.kinds.map((k, i) => (
-          <KindRow key={`${k.key}|${k.name}|${k.color}|${k.liquidity}|${t(k.name)}`} kind={k} index={i} count={state.kinds.length} moving={moving} onMove={(to) => move(i, to)} />
+          <KindRow key={k.key} kind={k} index={i} count={state.kinds.length} moving={moving} onMove={(to) => move(i, to)} />
         ))}
       </Stack>
     </Stack>
@@ -68,6 +68,13 @@ function KindRow({ kind, index, count, moving, onMove }: RowProps) {
   const label = t(kind.name)
   const [name, setName] = useState(label)
   const [color, setColor] = useState(kind.color)
+  // a saved change, a failed one put back, or a language switch: show the stored values again
+  const [shown, setShown] = useState(label + kind.color)
+  if (shown !== label + kind.color) {
+    setShown(label + kind.color)
+    setName(label)
+    setColor(kind.color)
+  }
   const used = state.accounts.filter((a) => a.kind === kind.key).length
 
   const commit = async (patch: Partial<KindInput>) => {
@@ -119,18 +126,17 @@ function KindRow({ kind, index, count, moving, onMove }: RowProps) {
   return (
     <Paper withBorder p="xs" radius="md">
       <Group gap="xs" wrap="wrap" align="center">
-        <ColorInput
-          aria-label={T`${label} 的顏色`}
-          value={color}
-          onChange={setColor}
-          onChangeEnd={(c) => commit({ color: c })}
-          onBlur={() => commit({})}
-          swatches={SWATCHES}
-          swatchesPerRow={10}
-          withEyeDropper={false}
-          w={118}
-          classNames={{ input: "num" }}
-        />
+        {/* a swatch rather than a hex field: the color is the label, the code is noise */}
+        <Popover position="bottom-start" shadow="md" trapFocus>
+          <Popover.Target>
+            <ActionIcon variant="default" size="lg" aria-label={T`${label} 的顏色`}>
+              <ColorSwatch color={color} size={18} withShadow={false} />
+            </ActionIcon>
+          </Popover.Target>
+          <Popover.Dropdown>
+            <ColorPicker value={color} onChange={setColor} onChangeEnd={(c) => commit({ color: c })} swatches={SWATCHES} swatchesPerRow={10} format="hex" />
+          </Popover.Dropdown>
+        </Popover>
         <TextInput
           aria-label={T`${label} 的名稱`}
           value={name}

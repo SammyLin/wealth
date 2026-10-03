@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { useMediaQuery } from "@mantine/hooks"
+import { useIsPhone } from "../../shell/useIsPhone"
 import { Button, Group, Modal, NumberInput, Paper, Select, SimpleGrid, Stack, Text, TextInput } from "@mantine/core"
 import { DatePickerInput } from "@mantine/dates"
 import { useForm } from "@mantine/form"
@@ -53,7 +53,7 @@ export function LoanModal({ opened, onClose, loan }: Props) {
   const { state, saveLoan } = useLedgerState()
   const money = useMoney()
   const { lang } = useLang()
-  const fullScreen = useMediaQuery("(max-width: 48em)")
+  const fullScreen = useIsPhone()
   const [saving, setSaving] = useState(false)
   const form = useForm<Values>({ initialValues: initial(loan), validate })
   // Esc, X, the backdrop and Cancel ask before dropping typed loan terms, like the other dialogs

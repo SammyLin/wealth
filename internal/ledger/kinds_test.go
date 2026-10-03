@@ -399,7 +399,8 @@ func TestWriteValidation(t *testing.T) {
 		{"delete missing account", "DELETE", "/api/accounts/999", "", 404},
 		{"blank title", "PUT", "/api/settings", `{"title":"  "}`, 400},
 		{"loan unknown account", "POST", "/api/loans", `{"account_id":999,"name":"L","principal":100,"rate":0.02,"start":"2026-01-01","grace_months":0,"total_months":12}`, 400},
-		{"loan ok", "POST", "/api/loans", `{"account_id":` + id + `,"name":"L","principal":100,"rate":0.02,"start":"2026-01-01","grace_months":0,"total_months":12}`, 201},
+		{"loan on a bank account", "POST", "/api/loans", `{"account_id":` + id + `,"name":"L","principal":100,"rate":0.02,"start":"2026-01-01","grace_months":0,"total_months":12}`, 400},
+		{"loan ok", "POST", "/api/loans", `{"name":"L","principal":100,"rate":0.02,"start":"2026-01-01","grace_months":0,"total_months":12}`, 201},
 		{"update missing loan", "PUT", "/api/loans/999", `{"name":"L","principal":100,"rate":0.02,"start":"2026-01-01","grace_months":0,"total_months":12}`, 404},
 		{"delete missing loan", "DELETE", "/api/loans/999", "", 404},
 		{"event ok", "POST", "/api/events", `{"date":"2026-01-01","title":"x"}`, 201},
@@ -407,6 +408,7 @@ func TestWriteValidation(t *testing.T) {
 		{"delete missing event", "DELETE", "/api/events/999", "", 404},
 		{"delete missing snapshot", "DELETE", "/api/snapshots?account_id=" + id + "&date=2020-01-01", "", 404},
 		{"duplicate kind name", "POST", "/api/kinds", `{"key":"bank2","name":"銀行","color":"#000000","liquidity":"liquid"}`, 409},
+		{"kind named like a seeded one in English", "POST", "/api/kinds", `{"key":"bank3","name":"bank","color":"#000000","liquidity":"liquid"}`, 409},
 		{"rename kind onto another", "PUT", "/api/kinds/tw_stock", `{"name":"美股","color":"#000000","liquidity":"invest","sort":1}`, 409},
 	} {
 		if w := callJSON(t, r, c.method, c.path, c.body, nil); w.Code != c.want {

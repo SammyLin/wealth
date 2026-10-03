@@ -1,7 +1,8 @@
 import { Modal, Tabs } from "@mantine/core"
-import { useMediaQuery } from "@mantine/hooks"
+import { useIsPhone } from "../../shell/useIsPhone"
 import { Shapes, WalletCards } from "lucide-react"
 import { t } from "../../i18n"
+import type { AccountTarget } from "../../shell/dialogs"
 import { DirtyContext, useGuardedClose } from "../../shell/dirty"
 import { AccountList } from "./AccountList"
 import { KindsManager } from "./KindsManager"
@@ -10,10 +11,10 @@ import { KindsManager } from "./KindsManager"
  * "帳戶與類別" dialog: accounts (edit, reorder, archive, history) and account classes. Full screen on phones.
  * Closing over an unsaved account edit, history row or new class asks first.
  */
-type Props = { opened: boolean; onClose: () => void; /** Opens with this account expanded. */ accountId?: number }
+type Props = { opened: boolean; onClose: () => void; /** Opens with this account expanded, or "new" on the add form. */ accountId?: AccountTarget }
 
 export function AccountsManager({ opened, onClose, accountId }: Props) {
-  const phone = useMediaQuery("(max-width: 48em)") // Mantine `sm`
+  const phone = useIsPhone()
   const { dirty, close } = useGuardedClose(onClose)
   return (
     <Modal opened={opened} onClose={close} title={t("帳戶與類別")} size="xl" fullScreen={phone}>

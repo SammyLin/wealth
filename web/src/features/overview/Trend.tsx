@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { ActionIcon, Button, EmptyState, Group, SegmentedControl, Stack, Text, Tooltip } from "@mantine/core"
 import { LineChart } from "@mantine/charts"
+import { Line, LineChart as RLineChart } from "recharts"
 import { DateInput } from "@mantine/dates"
 import { useMediaQuery } from "@mantine/hooks"
 import { CalendarDays, ChartLine, MoveHorizontal, PenLine, ZoomOut } from "lucide-react"
@@ -11,7 +12,7 @@ import { fmtDate, fmtPct, fmtTick, parseDay, todayISO, toIso, toMs } from "../..
 import { ChartTable } from "../../shell/ChartTable"
 import { SectionCard } from "../../shell/SectionCard"
 import { useOpenDialog } from "../../shell/dialogs"
-import { niceTicks } from "./data"
+import { niceTicks, openings } from "./data"
 import { useTrendRange, type RangeKind, type Zoom } from "./range"
 
 const RANGE_LABEL: Record<RangeKind, string> = { "3M": "3個月", "6M": "6個月", "1Y": "1年", "3Y": "3年", "5Y": "5年", all: "全部", custom: "自訂" }
@@ -128,7 +129,13 @@ function Chart({ rows, events, zoom, onZoom }: { rows: Row[]; events: Event[]; z
           // handles wide enough to grab with a finger (the 44px rule can't reach recharts' SVG)
           height: 36,
           travellerWidth: 24,
-          fill: "var(--wealth-paper-2)",
+          // a light track with the whole line drawn small inside it, so the slider previews what it zooms into
+          fill: "transparent",
+          children: (
+            <RLineChart data={data}>
+              <Line dataKey="total" stroke="var(--mantine-color-dimmed)" strokeWidth={1} dot={false} isAnimationActive={false} />
+            </RLineChart>
+          ),
           stroke: "var(--mantine-color-gold-5)",
           tickFormatter: () => "", // the range is shown in the section description instead (traveller text clips at the edge)
           // the two handles are keyboard sliders (Tab, then ← →); recharts would announce raw timestamps
@@ -174,9 +181,12 @@ function TipLabel({ ms, events }: { ms: number; events: Event[] }) {
 }
 
 function Change({ rows, label }: { rows: Row[]; label: string }) {
+  const { state } = useLedgerState()
   const money = useMoney()
   const a = rows[0], z = rows[rows.length - 1]
-  const d = z.total - a.total
+  // accounts first recorded inside the range: their opening balance is shown apart, not counted as growth
+  const opened = openings(state.accounts, state.kinds, a.date, z.date)
+  const d = z.total - a.total - opened.total
   const color = d > 0 ? "var(--wealth-up)" : d < 0 ? "var(--wealth-down)" : undefined
   // Over longer ranges the change per year too (a plain average: compounding means nothing once net worth is negative);
   // under 1.5 years it would just repeat the total
@@ -192,6 +202,12 @@ function Change({ rows, label }: { rows: Row[]; label: string }) {
         <Text span inherit className="num">
           {" · "}
           {T`平均每年 ${money(d / years, { signed: true })}`}
+        </Text>
+      )}
+      {opened.count > 0 && (
+        <Text span inherit className="num">
+          {" · "}
+          {T`新帳戶 ${money(opened.total, { signed: true })}(${opened.count})`}
         </Text>
       )}
     </>

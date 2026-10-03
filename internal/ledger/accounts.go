@@ -20,7 +20,10 @@ const (
 // createAccount is POST /api/accounts {name,kind,currency?,note?}. New accounts go last; PUT /api/accounts/order moves them.
 func (h *api) createAccount(c *gin.Context) {
 	var a Account
-	if c.ShouldBindJSON(&a) != nil || strings.TrimSpace(a.Name) == "" {
+	if !bindJSON(c, &a) {
+		return
+	}
+	if strings.TrimSpace(a.Name) == "" {
 		bad(c, http.StatusBadRequest, "名稱和類別必填")
 		return
 	}
@@ -87,8 +90,7 @@ func (h *api) patchAccount(c *gin.Context) {
 		Sort     *int    `json:"sort"`
 		Note     *string `json:"note"`
 	}
-	if c.ShouldBindJSON(&body) != nil {
-		bad(c, http.StatusBadRequest, "格式不正確")
+	if !bindJSON(c, &body) {
 		return
 	}
 	id, ctx := c.Param("id"), c.Request.Context()
@@ -200,7 +202,10 @@ func (h *api) orderAccounts(c *gin.Context) {
 	var in struct {
 		IDs []int64 `json:"ids"`
 	}
-	if c.ShouldBindJSON(&in) != nil || len(in.IDs) > 5000 {
+	if !bindJSON(c, &in) {
+		return
+	}
+	if len(in.IDs) > 5000 {
 		bad(c, http.StatusBadRequest, "ids 格式不正確")
 		return
 	}

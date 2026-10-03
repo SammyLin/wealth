@@ -48,10 +48,33 @@ export function usefulPeriods(rows: Row[]): Period[] {
   })
 }
 
-/** Per kind, how much its contribution to net worth changed from `prev` to `last` (liabilities are already negative), biggest first. */
-export function movers(prev: Row, last: Row, kinds: Kind[]): { kind: Kind; delta: number }[] {
+/**
+ * Accounts whose first record falls after `from` and on or before `to`: they existed before, they just weren't
+ * tracked, so their opening balance isn't growth. Their effect on net worth (liabilities negative), in total and
+ * per kind; the hero, the movers and the trend's change leave it out and show it on its own.
+ */
+export function openings(accounts: Account[], kinds: Kind[], from: string, to: string) {
+  const liab = new Set(kinds.filter((k) => k.liquidity === "liability").map((k) => k.key))
+  const byKind: Record<string, number> = {}
+  let total = 0, count = 0
+  for (const a of accounts) {
+    const first = a.history[0]
+    if (!first || first.date <= from || first.date > to) continue
+    const v = liab.has(a.kind) ? -first.value : first.value
+    byKind[a.kind] = (byKind[a.kind] ?? 0) + v
+    total += v
+    count++
+  }
+  return { total, byKind, count }
+}
+
+/**
+ * Per kind, how much its contribution to net worth changed from `prev` to `last` (liabilities are already
+ * negative), biggest first. `opened` (openings().byKind) is taken out, so a newly tracked account isn't a move.
+ */
+export function movers(prev: Row, last: Row, kinds: Kind[], opened: Record<string, number> = {}): { kind: Kind; delta: number }[] {
   return kinds
-    .map((kind) => ({ kind, delta: (last.by_kind[kind.key] ?? 0) - (prev.by_kind[kind.key] ?? 0) }))
+    .map((kind) => ({ kind, delta: (last.by_kind[kind.key] ?? 0) - (prev.by_kind[kind.key] ?? 0) - (opened[kind.key] ?? 0) }))
     .filter((m) => Math.abs(m.delta) >= 0.5)
     .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
 }
@@ -59,14 +82,15 @@ export function movers(prev: Row, last: Row, kinds: Kind[]): { kind: Kind; delta
 /**
  * The account that moved net worth most from `from` to `to` (each account's balance carried forward to both
  * dates, as the series does): its own balance change and whether it is a liability (then net worth moved the
- * other way). Undefined when nothing moved.
+ * other way). An account first recorded inside the range counts from its opening balance. Undefined when nothing moved.
  */
 export function topAccount(accounts: Account[], kinds: Kind[], from: string, to: string) {
   const liab = new Set(kinds.filter((k) => k.liquidity === "liability").map((k) => k.key))
   const at = (a: Account, d: string) => a.history.findLast((p) => p.date <= d)?.value ?? 0
   let best: { account: Account; delta: number; liability: boolean } | undefined
   for (const a of accounts) {
-    const delta = at(a, to) - at(a, from)
+    const first = a.history[0]
+    const delta = at(a, to) - (first && first.date > from ? first.value : at(a, from))
     if (Math.abs(delta) >= 0.5 && Math.abs(delta) > Math.abs(best?.delta ?? 0)) best = { account: a, delta, liability: liab.has(a.kind) }
   }
   return best

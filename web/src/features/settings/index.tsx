@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { Box, Divider, Drawer, Modal, Stack, Text, Title, useMatches } from "@mantine/core"
+import { Box, Divider, Drawer, Modal, Stack, Text, Title } from "@mantine/core"
 import { t } from "../../i18n"
 import { DirtyContext, useGuardedClose } from "../../shell/dirty"
 import { CsvImport } from "./CsvImport"
@@ -7,11 +7,12 @@ import { LedgerSettings } from "./LedgerSettings"
 import { DisplaySettings } from "./DisplaySettings"
 import { LayoutEditor } from "./LayoutEditor"
 import { ImportExport } from "./ImportExport"
+import { useIsPhone } from "../../shell/useIsPhone"
 
 // Rendered by App only after /api/state has loaded. The drawer unmounts its content when closed,
 // so every open starts from the current settings. Closing over an unsaved ledger name asks first.
 export function SettingsDrawer({ opened, onClose }: { opened: boolean; onClose: () => void }) {
-  const size = useMatches({ base: "100%", sm: "md" })
+  const size = useIsPhone() ? "100%" : "md"
   const { dirty, close } = useGuardedClose(onClose)
   return (
     <Drawer opened={opened} onClose={close} title={t("設定")} size={size}>
@@ -40,7 +41,7 @@ export function SettingsDrawer({ opened, onClose }: { opened: boolean; onClose: 
 
 /** CSV import on its own, for the first-run screen (a migrating household starts from a spreadsheet). */
 export function ImportDialog({ opened, onClose }: { opened: boolean; onClose: () => void }) {
-  const fullScreen = useMatches({ base: true, sm: false })
+  const fullScreen = useIsPhone()
   return (
     <Modal opened={opened} onClose={onClose} title={t("從 CSV 匯入")} size="lg" fullScreen={fullScreen}>
       <CsvImport />

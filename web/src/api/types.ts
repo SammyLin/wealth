@@ -53,6 +53,10 @@ export type Settings = {
   base_currency: string
   unit: Unit
   layout: string // JSON-encoded Layout; parse with useLayout()
+  /** JSON {accounts, loans, events}: ids the demo ledger wrote; "" when there is no demo to clear */
+  demo: string
+  /** JSON list of account ids the stale-balance nudge skips; "" for none */
+  stale_muted: string
 }
 
 export type Layout = { sections: { id: SectionId; hidden: boolean }[] }

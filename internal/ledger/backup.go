@@ -18,17 +18,17 @@ import (
 // so it only exists on the self-hosted server.
 func DownloadBackup(db *sql.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		f, err := os.CreateTemp("", "wealth-*.db")
+		// a private 0700 dir: VACUUM INTO creates its file 0644, and needs a path that doesn't exist yet
+		dir, err := os.MkdirTemp("", "wealth-*")
 		if fail(c, err) {
 			return
 		}
-		f.Close()
-		os.Remove(f.Name()) // VACUUM INTO needs a path that doesn't exist yet
-		defer os.Remove(f.Name())
-		if _, err := db.Exec(`VACUUM INTO ?`, f.Name()); fail(c, err) {
+		defer os.RemoveAll(dir)
+		path := filepath.Join(dir, "wealth.db")
+		if _, err := db.Exec(`VACUUM INTO ?`, path); fail(c, err) {
 			return
 		}
-		c.FileAttachment(f.Name(), "wealth-"+time.Now().Format("2006-01-02")+".db")
+		c.FileAttachment(path, "wealth-"+time.Now().Format("2006-01-02")+".db")
 	}
 }
 
@@ -50,6 +50,9 @@ func backupOnce(db *sql.DB, dir string, keep int, now time.Time) error {
 	path := filepath.Join(dir, "wealth-"+now.Format("2006-01-02")+".db")
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		if _, err := db.Exec(`VACUUM INTO ?`, path); err != nil {
+			return err
+		}
+		if err := os.Chmod(path, 0o600); err != nil {
 			return err
 		}
 	}

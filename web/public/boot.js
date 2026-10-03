@@ -9,8 +9,9 @@ try {
   document.documentElement.lang = l === "en" ? "en" : "zh-Hant"
 } catch {}
 // Web fonts, non-blocking (a stylesheet added from a script doesn't hold up rendering): text paints in the
-// fallback first, then swaps. Self-hosting them? Point these at your copies (README "Fonts").
-;[
+// fallback first, then swaps. Self-hosting them? Point these at your copies (README "Fonts"). The server sets
+// data-fonts="system" (WEALTH_FONTS=system) for installs that must not call out to the font hosts.
+if (document.documentElement.getAttribute("data-fonts") !== "system") [
   "https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,400&display=swap",
   "https://font.emtech.cc/css/GenRyuMinTW/600",
   "https://font.emtech.cc/css/MiSansTC/400",

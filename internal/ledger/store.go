@@ -13,6 +13,11 @@ var defaultSettings = map[string]string{
 	"base_currency": "TWD",
 	"unit":          "wan",
 	"layout":        defaultLayout,
+	// ids of the rows "load a demo ledger" wrote, {"accounts":[…],"loans":[…],"events":[…]}, so the UI can offer
+	// to clear exactly those; "" once cleared or never loaded
+	"demo": "",
+	// account ids the "hasn't been updated in 90 days" nudge skips (a house revalued twice a year), as [1,2]
+	"stale_muted": "",
 }
 
 // defaultLayout is the dashboard section order the UI starts with; the layout editor overwrites it.

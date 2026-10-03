@@ -53,6 +53,9 @@ func TestBackupOnceKeepsNewest(t *testing.T) {
 	if len(got) != 2 || filepath.Base(got[0]) != "wealth-2020-01-03.db" || filepath.Base(got[1]) != "wealth-2026-10-04.db" {
 		t.Fatalf("kept %v", got)
 	}
+	if fi, _ := os.Stat(got[1]); fi.Mode().Perm() != 0o600 {
+		t.Errorf("backup mode %v, want 0600", fi.Mode().Perm())
+	}
 	// a second run the same day doesn't rewrite today's file
 	os.WriteFile(got[1], []byte("marker"), 0o600)
 	if err := backupOnce(db, dir, 2, now); err != nil {

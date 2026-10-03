@@ -12,13 +12,14 @@ RUN npm run build
 
 FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS server
 ARG TARGETOS TARGETARCH
+ARG VERSION=dev
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=web /src/web/dist ./web/dist
 # modernc.org/sqlite is pure Go, so the binary is static
-RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/wealth ./cmd/wealth
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w -X github.com/SammyLin/wealth/internal/ledger.Version=$VERSION" -o /out/wealth ./cmd/wealth
 
 FROM alpine:3.22
 RUN adduser -D -u 10001 wealth && mkdir /data && chown wealth /data

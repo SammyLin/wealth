@@ -111,9 +111,9 @@ func parseImport(b []byte) ([]importRow, []*userErr) {
 			continue
 		}
 		line, _ := r.FieldPos(0) // the spreadsheet's row number, blank lines included
-		row := importRow{line: line, date: field(rec, "date"), account: unescapeCell(field(rec, "account")), kind: field(rec, "kind"), currency: field(rec, "currency")}
+		row := importRow{line: line, date: normDate(field(rec, "date")), account: unescapeCell(field(rec, "account")), kind: field(rec, "kind"), currency: field(rec, "currency")}
 		if !validDate(row.date) {
-			errs.add("第 {} 列的日期不正確,要是 YYYY-MM-DD", line)
+			errs.add("第 {} 列的日期不正確,要是 YYYY-MM-DD 或 YYYY/M/D", line)
 			continue
 		}
 		if row.account == "" {
@@ -153,6 +153,20 @@ func parseImport(b []byte) ([]importRow, []*userErr) {
 		return one("CSV 沒有資料列")
 	}
 	return out, errs.list()
+}
+
+// looseDateRe is year-first with -, / or . and unpadded month/day (2026/9/30 from Excel, 2026.10.04 as the
+// zh UI shows dates). Day-first or month-first forms are ambiguous and stay rejected.
+var looseDateRe = regexp.MustCompile(`^(\d{4})([-/.])(\d{1,2})([-/.])(\d{1,2})$`)
+
+// normDate turns a looseDateRe match into YYYY-MM-DD; anything else comes back unchanged for validDate to reject.
+func normDate(s string) string {
+	m := looseDateRe.FindStringSubmatch(s)
+	if m == nil || m[2] != m[4] {
+		return s
+	}
+	pad := func(x string) string { return strings.Repeat("0", 2-len(x)) + x }
+	return m[1] + "-" + pad(m[3]) + "-" + pad(m[5])
 }
 
 var (
@@ -403,7 +417,8 @@ func (h *api) importBalances(c *gin.Context) {
 		return
 	}
 
-	// Every rate first: an FX outage must fail the import before any account or balance is written.
+	// Every rate first, then every row validated with its rate, all before the first write: an FX outage or
+	// an out-of-range looked-up rate must fail the import before any account or balance is written.
 	rates := map[string]float64{}
 	for i := range matched {
 		m := &matched[i]
@@ -420,6 +435,12 @@ func (h *api) importBalances(c *gin.Context) {
 				}
 			}
 			m.fx = rates[k]
+		}
+	}
+	for _, m := range matched {
+		if !validSnapshot(Snapshot{Date: m.date, Amount: m.amount, FX: m.fx}) {
+			bad(c, http.StatusBadRequest, "第 {} 列的日期、金額或匯率不正確", m.line)
+			return
 		}
 	}
 	// ponytail: no transactions on D1, so a name taken between the checks and here (another tab) stops the
@@ -443,12 +464,7 @@ func (h *api) importBalances(c *gin.Context) {
 		if id == 0 {
 			id = created[m.key]
 		}
-		s := Snapshot{AccountID: id, Date: m.date, Amount: m.amount, FX: m.fx}
-		if !validSnapshot(s) {
-			bad(c, http.StatusBadRequest, "日期、金額或匯率不正確")
-			return
-		}
-		snaps = append(snaps, s)
+		snaps = append(snaps, Snapshot{AccountID: id, Date: m.date, Amount: m.amount, FX: m.fx})
 	}
 	if fail(c, upsertSnapshots(ctx, db, snaps)) {
 		return

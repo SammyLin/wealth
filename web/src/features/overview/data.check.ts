@@ -1,6 +1,6 @@
-// Self-check, not bundled: `node src/features/overview/data.check.ts` (Node ≥ 23 strips the types); `npm run check` runs every *.check.ts with node --test.
+// Self-check, not bundled: `node src/features/overview/data.check.ts` (Node 22.18+ strips the types); `npm run check` runs every *.check.ts with node --test.
 import assert from "node:assert/strict"
-import { inPeriod, inRange, liquidityMix, movers, niceTicks, topAccount, usefulPeriods } from "./data.ts"
+import { inPeriod, inRange, liquidityMix, movers, niceTicks, openings, topAccount, usefulPeriods } from "./data.ts"
 import type { Account, Kind, Row } from "../../api/types.ts"
 
 const row = (date: string, total = 0, by_kind: Record<string, number> = {}): Row => ({ date, total, by_kind })
@@ -53,3 +53,13 @@ const accts = [acct(1, "bank", [["2026-01-01", 100], ["2026-09-01", 90]]), acct(
 const top = topAccount(accts, kinds, "2026-01-01", "2026-10-01")
 assert.deepStrictEqual([top?.account.id, top?.delta, top?.liability], [2, -30, true])
 assert.deepStrictEqual(topAccount(accts, kinds, "2026-10-01", "2026-10-01"), undefined)
+
+// a newly tracked account is an opening balance, not growth: left out of the movers and the top account
+{
+  const accts = [acct(1, "bank", [["2026-01-01", 100], ["2026-10-01", 120]]), acct(2, "us", [["2026-10-01", 500]]), acct(3, "loan", [["2026-06-01", 300], ["2026-10-01", 290]])]
+  const o = openings(accts, kinds, "2026-01-01", "2026-10-01")
+  assert.deepStrictEqual(o, { total: 200, byKind: { us: 500, loan: -300 }, count: 2 })
+  const mv = movers(row("2026-01-01", 100, { bank: 100 }), row("2026-10-01", 330, { bank: 120, us: 500, loan: -290 }), kinds, o.byKind)
+  assert.deepStrictEqual(mv.map((x) => [x.kind.key, x.delta]), [["bank", 20], ["loan", 10]])
+  assert.deepStrictEqual(topAccount(accts, kinds, "2026-01-01", "2026-10-01")?.account.id, 1) // us: 500 → 500 is no move
+}

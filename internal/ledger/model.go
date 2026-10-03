@@ -111,7 +111,7 @@ func series(snaps []Snapshot, kindOf map[int64]string, kinds map[string]Kind) []
 // Bounds keep every stored figure encodable as JSON (no Inf/NaN) and far from float precision trouble.
 const (
 	maxAmount = 1e15
-	maxFX     = 1e6
+	maxFX     = 1e12
 )
 
 // validSnapshot is shared by POST /api/snapshots and the CSV import. The comparisons are false for NaN.

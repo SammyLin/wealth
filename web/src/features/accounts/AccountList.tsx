@@ -1,21 +1,28 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Accordion, Box, Button, Card, Collapse, ColorSwatch, Divider, EmptyState, Group, Stack, Text } from "@mantine/core"
 import { Archive, PenLine, Plus, WalletCards } from "lucide-react"
 import { useLedgerState, useMoney } from "../../api/useLedger"
 import type { Account } from "../../api/types"
 import { T, t } from "../../i18n"
-import { useOpenDialog } from "../../shell/dialogs"
+import { useOpenDialog, type AccountTarget } from "../../shell/dialogs"
 import { AccountForm } from "./AccountForm"
 import { HistoryTable } from "./HistoryTable"
 import { moved } from "./logic"
 import { MoveButtons } from "./MoveButtons"
 
-/** Accounts as an accordion: the row summarizes, the panel edits the account and its history. */
-export function AccountList({ initialOpen }: { initialOpen?: number }) {
+/**
+ * Accounts as an accordion: the row summarizes, the panel edits the account and its history. Focus follows the
+ * add form like KindsManager's: into its name once the panel has opened, back to "Add account" once it closed,
+ * and to the count heading after a delete removes the row that held it.
+ */
+export function AccountList({ initialOpen }: { initialOpen?: AccountTarget }) {
   const { state, reorderAccounts } = useLedgerState()
   const openDialog = useOpenDialog()
-  const [open, setOpen] = useState<string | null>(initialOpen ? String(initialOpen) : null)
-  const [adding, setAdding] = useState(!state.accounts.length)
+  const [open, setOpen] = useState<string | null>(typeof initialOpen === "number" ? String(initialOpen) : null)
+  const [adding, setAdding] = useState(!state.accounts.length || initialOpen === "new")
+  const nameInput = useRef<HTMLInputElement>(null)
+  const addButton = useRef<HTMLButtonElement>(null)
+  const heading = useRef<HTMLParagraphElement>(null)
   const [moving, setMoving] = useState(false)
   const active = state.accounts.filter((a) => !a.archived)
   const archived = state.accounts.filter((a) => a.archived)
@@ -32,13 +39,22 @@ export function AccountList({ initialOpen }: { initialOpen?: number }) {
   }
 
   const item = (a: Account, i: number) => (
-    <AccountItem key={a.id} account={a} opened={open === String(a.id)} moving={moving} onMove={a.archived ? undefined : (to) => move(i, to)} index={i} count={active.length} />
+    <AccountItem
+      key={a.id}
+      account={a}
+      opened={open === String(a.id)}
+      moving={moving}
+      onMove={a.archived ? undefined : (to) => move(i, to)}
+      onDeleted={() => heading.current?.focus()}
+      index={i}
+      count={active.length}
+    />
   )
 
   return (
     <Stack gap="md">
       <Group justify="space-between" gap="sm">
-        <Text fz="sm" c="dimmed">
+        <Text ref={heading} tabIndex={-1} fz="sm" c="dimmed">
           {T`${active.length} 個帳戶`}
         </Text>
         <Group gap="xs">
@@ -48,19 +64,19 @@ export function AccountList({ initialOpen }: { initialOpen?: number }) {
             </Button>
           )}
           {!adding && (
-            <Button variant="light" leftSection={<Plus size={16} />} onClick={() => setAdding(true)}>
+            <Button ref={addButton} variant="light" leftSection={<Plus size={16} />} onClick={() => setAdding(true)}>
               {t("新增帳戶")}
             </Button>
           )}
         </Group>
       </Group>
 
-      <Collapse expanded={adding}>
+      <Collapse expanded={adding} onTransitionEnd={() => (adding ? nameInput.current : addButton.current)?.focus()}>
         <Card withBorder shadow="none" bg="var(--wealth-paper)">
           <Text ff="heading" fw={600} mb="sm">
             {t("新增帳戶")}
           </Text>
-          {adding && <AccountForm onDone={() => setAdding(false)} />}
+          {adding && <AccountForm nameRef={nameInput} onDone={() => setAdding(false)} />}
         </Card>
       </Collapse>
 
@@ -93,9 +109,9 @@ export function AccountList({ initialOpen }: { initialOpen?: number }) {
   )
 }
 
-type ItemProps = { account: Account; opened: boolean; moving: boolean; index: number; count: number; onMove?: (to: number) => void }
+type ItemProps = { account: Account; opened: boolean; moving: boolean; index: number; count: number; onMove?: (to: number) => void; onDeleted: () => void }
 
-function AccountItem({ account: a, opened, moving, index, count, onMove }: ItemProps) {
+function AccountItem({ account: a, opened, moving, index, count, onMove, onDeleted }: ItemProps) {
   const { state } = useLedgerState()
   const money = useMoney()
   const kind = state.kinds.find((k) => k.key === a.kind)
@@ -135,7 +151,7 @@ function AccountItem({ account: a, opened, moving, index, count, onMove }: ItemP
       <Accordion.Panel>
         {opened && (
           <>
-            <AccountForm account={a} />
+            <AccountForm account={a} onDeleted={onDeleted} />
             <HistoryTable account={a} />
           </>
         )}

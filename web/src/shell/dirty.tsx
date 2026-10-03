@@ -20,8 +20,13 @@ export function useDirty(dirty: boolean, own?: Set<string>) {
   }, [set, dirty, id])
 }
 
-/** `close` asks first when any form inside reported unsaved edits; provide `dirty` through DirtyContext. */
-export function useGuardedClose(onClose: () => void) {
+type Ask = { title: string; body: string; cancel: string }
+
+/**
+ * `close` asks first when any form inside reported unsaved edits; provide `dirty` through DirtyContext.
+ * `ask` replaces the generic wording (記一筆 says how many balances would be lost).
+ */
+export function useGuardedClose(onClose: () => void, ask?: Ask) {
   const [dirty] = useState(() => new Set<string>())
   // Mantine's modal and the confirm both listen for Esc: ignore close requests while the confirm is up.
   const confirming = useRef(false)
@@ -30,10 +35,10 @@ export function useGuardedClose(onClose: () => void) {
     if (!dirty.size) return onClose()
     confirming.current = true
     askConfirm({
-      title: t("放棄未儲存的修改?"),
-      body: t("關掉後,還沒按儲存的修改都不會保留。"),
+      title: ask?.title ?? t("放棄未儲存的修改?"),
+      body: ask?.body ?? t("關掉後,還沒按儲存的修改都不會保留。"),
       confirm: t("放棄"),
-      cancel: t("繼續編輯"),
+      cancel: ask?.cancel ?? t("繼續編輯"),
       danger: true,
       onConfirm: () => {
         dirty.clear()

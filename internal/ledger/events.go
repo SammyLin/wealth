@@ -10,7 +10,10 @@ import (
 // saveEvent is POST /api/events and PUT /api/events/:id {date,title}.
 func (h *api) saveEvent(c *gin.Context) {
 	var e Event
-	if c.ShouldBindJSON(&e) != nil || strings.TrimSpace(e.Title) == "" {
+	if !bindJSON(c, &e) {
+		return
+	}
+	if strings.TrimSpace(e.Title) == "" {
 		bad(c, http.StatusBadRequest, "日期和事件名稱必填")
 		return
 	}

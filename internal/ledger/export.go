@@ -59,9 +59,9 @@ var exportLabels = map[bool]map[string]string{
 	true:  {"account": "Account", "kind": "Class", "currency": "Currency", "archived": "Archived", "yes": "yes", "fx": "Rate %s (to %s)", "subtotal": "Subtotal %s (%s)", "net": "Net worth (%s)"},
 }
 
-// seededKindEn names migration 0002's kinds in English (the same words as the UI's i18n/en.ts), for ?lang=en.
+// seededKindEn names migration 0002's kinds (plus FirstRun's non-TWD renames) in English (the same words as the UI's i18n/en.ts), for ?lang=en.
 // A kind the user renamed keeps its own name.
-var seededKindEn = map[string]string{"銀行": "Bank", "台股": "TW stocks", "美股": "US stocks", "加密貨幣": "Crypto", "動產": "Personal property", "不動產": "Real estate", "負債": "Liabilities"}
+var seededKindEn = map[string]string{"銀行": "Bank", "台股": "TW stocks", "美股": "US stocks", "加密貨幣": "Crypto", "動產": "Personal property", "不動產": "Real estate", "負債": "Liabilities", "股票": "Stocks", "海外股票": "Foreign stocks"}
 
 // exportLong writes date,account,amount,fx,kind,currency: the layout POST /api/import reads, so an export
 // re-imports as is, and into an empty ledger the kind and currency columns preset each account it creates.

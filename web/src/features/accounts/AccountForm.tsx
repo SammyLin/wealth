@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, type Ref } from "react"
 import { Button, Group, SimpleGrid, Switch, Text, TextInput, Textarea } from "@mantine/core"
 import { useForm } from "@mantine/form"
 import { notifications } from "@mantine/notifications"
@@ -8,6 +8,7 @@ import type { Account, AccountPatch } from "../../api/types"
 import { T, t } from "../../i18n"
 import { askConfirm } from "../../shell/confirm"
 import { useDirty } from "../../shell/dirty"
+import { mutedIds, mutePatch } from "../../shell/muted"
 import { CurrencyInput, KindSelect } from "./inputs"
 import { CURRENCY_RE } from "../../lib/format"
 
@@ -19,9 +20,12 @@ const ok = (message: string) => notifications.show({ message, icon: <Check size=
  * are ten quick entries; onDone is the cancel button); otherwise edits it, with archive and delete.
  * After an add the class and currency go back to the defaults (first asset class, base currency): a kept
  * liability class would silently subtract the next savings account from net worth.
+ * `nameRef` lets the list focus the name once its Collapse has opened (data-autofocus only works as a dialog opens).
  */
-export function AccountForm({ account, onDone }: { account?: Account; onDone?: () => void }) {
-  const { state, createAccount, updateAccount, deleteAccount } = useLedgerState()
+type Props = { account?: Account; onDone?: () => void; onDeleted?: () => void; nameRef?: Ref<HTMLInputElement> }
+
+export function AccountForm({ account, onDone, onDeleted, nameRef }: Props) {
+  const { state, createAccount, updateAccount, deleteAccount, saveSettings } = useLedgerState()
   const money = useMoney()
   const [saving, setSaving] = useState(false)
   const locked = !!account?.history.length // fx history is per currency
@@ -127,7 +131,10 @@ export function AccountForm({ account, onDone }: { account?: Account; onDone?: (
       danger: true,
       onConfirm: () =>
         deleteAccount(account.id).then(
-          () => ok(T`已刪除「${account.name}」`),
+          () => {
+            ok(T`已刪除「${account.name}」`)
+            onDeleted?.()
+          },
           () => {},
         ),
     })
@@ -142,6 +149,7 @@ export function AccountForm({ account, onDone }: { account?: Account; onDone?: (
           required
           maxLength={60}
           data-autofocus={!account || undefined}
+          ref={nameRef}
           {...form.getInputProps("name")}
         />
         <KindSelect label={t("類別")} required {...form.getInputProps("kind")} />
@@ -159,6 +167,11 @@ export function AccountForm({ account, onDone }: { account?: Account; onDone?: (
         {account ? (
           <Group gap="md">
             <Switch label={t("封存")} checked={account.archived} onChange={(e) => setArchived(e.currentTarget.checked)} />
+            <Switch
+              label={t("90 天沒更新時提醒")}
+              checked={!mutedIds(state.settings).includes(account.id)}
+              onChange={(e) => saveSettings(mutePatch(state.settings, account.id, !e.currentTarget.checked)).catch(() => {})}
+            />
             <Button variant="subtle" color="down" size="compact-sm" leftSection={<Trash2 size={14} />} onClick={remove}>
               {t("刪除帳戶")}
             </Button>

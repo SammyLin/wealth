@@ -1,4 +1,4 @@
-// Self-check, not bundled: `node src/features/balance-sheet/sheet.check.ts` (Node ≥ 23 strips the types); `npm run check` runs every *.check.ts with node --test.
+// Self-check, not bundled: `node src/features/balance-sheet/sheet.check.ts` (Node 22.18+ strips the types); `npm run check` runs every *.check.ts with node --test.
 import assert from "node:assert/strict"
 import type { Account, Kind } from "../../api/types.ts"
 import { buildSheet, isStale, parseDraft, prefill } from "./sheet.ts"

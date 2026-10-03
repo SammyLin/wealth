@@ -109,20 +109,20 @@ func TestImportPreviewReportsEveryProblem(t *testing.T) {
 	wantStatus(t, callJSON(t, r, "POST", "/api/accounts", `{"name":"A","kind":"bank"}`, nil), 201)
 	// rows 3 and 5 share a bad date, row 4 repeats row 2 (in another case), row 6 has fx on a base-currency
 	// account, row 7 has no account name
-	csv := "date,account,amount,fx\n2026-01-01,A,1,\n01/02/2026,A,2,\n2026-01-01,a,3,\n2026/01/03,A,4,\n2026-01-04,A,5,7\n2026-01-05,,6,\n"
+	csv := "date,account,amount,fx\n2026-01-01,A,1,\n01/02/2026,A,2,\n2026-01-01,a,3,\n03/01/2026,A,4,\n2026-01-04,A,5,7\n2026-01-05,,6,\n"
 	d := preview(t, r, csv)
 	got := []string{}
 	for _, e := range d.Errors {
 		got = append(got, e.Error)
 	}
-	want := []string{"第 3、5 列的日期不正確,要是 YYYY-MM-DD", "第 4 列和前面重複:同一個帳戶同一天只能有一筆", "第 7 列沒有帳戶名稱", "這些帳戶是基準幣別,fx 要留空或填 1:A"}
+	want := []string{"第 3、5 列的日期不正確,要是 YYYY-MM-DD 或 YYYY/M/D", "第 4 列和前面重複:同一個帳戶同一天只能有一筆", "第 7 列沒有帳戶名稱", "這些帳戶是基準幣別,fx 要留空或填 1:A"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("errors %q", got)
 	}
 	if len(d.Rows) != 2 {
 		t.Errorf("good rows still previewed: %+v", d.Rows)
 	}
-	if e := d.Errors[0]; e.Key != "第 {} 列的日期不正確,要是 YYYY-MM-DD" || len(e.Params) != 1 {
+	if e := d.Errors[0]; e.Key != "第 {} 列的日期不正確,要是 YYYY-MM-DD 或 YYYY/M/D" || len(e.Params) != 1 {
 		t.Errorf("translatable key/params: %+v", e)
 	}
 	// the import refuses with the first problem and writes nothing
@@ -265,6 +265,13 @@ func TestImportCreatesAccountsOnlyWhenEverythingPasses(t *testing.T) {
 	}
 	wantStatus(t, call(t, r, "POST", "/api/import?accounts=nope", "text/csv", csv, nil), 400)
 
+	// a looked-up rate out of bounds fails before the account is created
+	FXClient = &http.Client{Transport: fxRT(`{"usd":{"twd":2e12}}`)}
+	wantStatus(t, call(t, r, "POST", "/api/import?accounts="+url.QueryEscape(usd), "text/csv", csv, nil), 400)
+	if accounts() != 0 {
+		t.Fatal("an out-of-range looked-up rate left an empty account behind")
+	}
+
 	FXClient = &http.Client{Transport: fxRT(`{"usd":{"twd":31.5}}`)}
 	var out struct{ Imported, Created int }
 	wantStatus(t, call(t, r, "POST", "/api/import?accounts="+url.QueryEscape(usd), "text/csv", csv, &out), 200)
@@ -291,5 +298,42 @@ func TestFXHandler(t *testing.T) {
 	wantStatus(t, callJSON(t, r, "GET", "/api/fx?cur=USD&date=2024-05-01", "", &e), 502)
 	if !strings.Contains(e.Error, "USD") {
 		t.Errorf("error %q", e.Error)
+	}
+}
+
+// BTC in a TWD ledger is millions per unit; Excel's 2026/9/30 and unpadded dates import; a bad date says "format".
+func TestBigRatesAndLooseDates(t *testing.T) {
+	r, db := newTestRouter(t)
+	var a Account
+	wantStatus(t, callJSON(t, r, "POST", "/api/accounts", `{"name":"Ledger","kind":"bank","currency":"BTC"}`, &a), 201)
+	wantStatus(t, callJSON(t, r, "POST", "/api/snapshots", `[{"account_id":`+jsonID(a.ID)+`,"date":"2026-01-01","amount":0.5,"fx":3200000}]`, nil), 204)
+	var e struct{ Error string }
+	wantStatus(t, callJSON(t, r, "POST", "/api/snapshots", `[{"account_id":`+jsonID(a.ID)+`,"date":"2026-13-01","amount":1,"fx":1}]`, &e), 400)
+	if !strings.Contains(e.Error, "YYYY-MM-DD") {
+		t.Errorf("bad month: %q", e.Error)
+	}
+	csv := "date,account,amount,fx\n2026/9/30,Ledger,1,3000000\n2026-9-3,Ledger,2,3000000\n2026.08.01,Ledger,3,3000000\n"
+	wantStatus(t, call(t, r, "POST", "/api/import", "text/csv", csv, nil), 200)
+	var n int
+	db.QueryRow(`SELECT COUNT(*) FROM snapshots WHERE date IN ('2026-09-30','2026-09-03','2026-08-01')`).Scan(&n)
+	if n != 3 {
+		t.Errorf("loose dates imported %d of 3", n)
+	}
+	for _, bad := range []string{"30/9/2026", "2026/9-30", "2026/13/1"} {
+		if d := preview(t, r, "date,account,amount\n"+bad+",Ledger,1\n"); !strings.Contains(errorsOf(d), "日期不正確") {
+			t.Errorf("%s accepted: %+v", bad, d)
+		}
+	}
+}
+
+func TestLoanLinksToLiabilityOnly(t *testing.T) {
+	r, _ := newTestRouter(t)
+	var mortgage Account
+	wantStatus(t, callJSON(t, r, "POST", "/api/accounts", `{"name":"房貸","kind":"liability"}`, &mortgage), 201)
+	wantStatus(t, callJSON(t, r, "POST", "/api/loans", `{"account_id":`+jsonID(mortgage.ID)+`,"name":"L","principal":100,"rate":0.02,"start":"2026-01-01","grace_months":0,"total_months":12}`, nil), 201)
+	var e struct{ Error string }
+	wantStatus(t, callJSON(t, r, "POST", "/api/accounts", `{"name":"`+strings.Repeat("x", maxBody)+`","kind":"bank"}`, &e), 400)
+	if e.Error != "內容超過 1 MB" {
+		t.Errorf("oversized body: %q", e.Error)
 	}
 }
