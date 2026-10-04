@@ -86,20 +86,48 @@ type Event struct {
 // ponytail: recomputed per request, O(dates*accounts); fine for a personal ledger.
 // Sign comes from the kind's liquidity, so a user-defined liability kind subtracts too.
 func series(snaps []Snapshot, kindOf map[int64]string, kinds map[string]Kind) []Row {
+	return seriesWithLoans(snaps, kindOf, kinds, nil)
+}
+
+// seriesWithLoans is series, except that a liability account linked to loans follows its loan schedule between
+// records: on a date after its last record, the balance is the recorded one moved by what the schedule says was
+// repaid since (the recorded figure stays authoritative, so a bank's rounding or a lump-sum payment is kept).
+// A forgotten mortgage then keeps falling instead of flat-lining, and the trend moves even when only assets are
+// recorded.
+func seriesWithLoans(snaps []Snapshot, kindOf map[int64]string, kinds map[string]Kind, loans []Loan) []Row {
 	sort.SliceStable(snaps, func(i, j int) bool { return snaps[i].Date < snaps[j].Date })
-	last := map[int64]float64{}
+	byAcct := map[int64][]Loan{}
+	for _, l := range loans {
+		if l.AccountID != nil && validLoan(l) == "" && kinds[kindOf[*l.AccountID]].Liquidity == "liability" {
+			byAcct[*l.AccountID] = append(byAcct[*l.AccountID], l)
+		}
+	}
+	owed := func(id int64, date string) float64 {
+		d, _ := time.Parse("2006-01-02", date)
+		var sum float64
+		for _, l := range byAcct[id] {
+			sum += l.Balance(d)
+		}
+		return sum
+	}
+	last, lastDate := map[int64]float64{}, map[int64]string{}
 	var rows []Row
 	for i, s := range snaps {
 		v := s.Amount * s.FX
 		if kinds[kindOf[s.AccountID]].Liquidity == "liability" {
 			v = -v
 		}
-		last[s.AccountID] = v
+		last[s.AccountID], lastDate[s.AccountID] = v, s.Date
 		if i+1 < len(snaps) && snaps[i+1].Date == s.Date {
 			continue
 		}
 		r := Row{Date: s.Date, ByKind: map[string]float64{}}
 		for id, v := range last {
+			if _, ok := byAcct[id]; ok && lastDate[id] < s.Date {
+				// v is -(recorded owed); take off what the schedule repaid since the record (owed never below zero)
+				repaid := owed(id, lastDate[id]) - owed(id, s.Date)
+				v = -math.Max(0, -v-repaid)
+			}
 			r.ByKind[kindOf[id]] += v
 			r.Total += v
 		}

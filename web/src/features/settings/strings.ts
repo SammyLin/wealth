@@ -15,6 +15,13 @@ export const en: Record<string, string> = {
   "所有金額都換算成這個幣別。開始記帳後就不能改。": "Every amount converts to this currency. It locks once you record a balance.",
   "儲存": "Save",
   "已儲存設定": "Settings saved",
+  "淨資產目標": "Net worth goal",
+  "1億": "100,000,000",
+  "選填。首頁會顯示進度,和照近一年的速度預計何時達到。": "Optional. The hero shows progress and when the past year's pace gets there.",
+  "目標日期": "Goal date",
+  "選填。": "Optional.",
+  "目標金額要是正數": "The goal must be a positive amount",
+  "目標日期格式錯誤": "Bad goal date",
   // display
   "金額單位": "Amount unit",
   "萬": "10K (萬)",

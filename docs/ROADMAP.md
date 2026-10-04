@@ -6,6 +6,10 @@ Each phase keeps the self-host single binary working; the hosted product is the 
 
 Self-host (SQLite) and Workers (D1) share one router. Custom kinds, account order, layout and unit settings, CSV import, Mantine UI. Schema: `0001_init`, `0002_kinds_layout`.
 
+## Phase 1.5 — what YNAB does better
+
+Loan payoff simulator, loan-driven liability carry-forward, one net-worth target with a projected date, trend filters and a monthly table, per-account update cadence, a runway number. Reasoning and order in [YNAB-REFERENCE.md](YNAB-REFERENCE.md). None of it needs schema beyond one column on `accounts` (cadence) and two settings keys.
+
 ## Phase 2 — multi-tenant
 
 - **Schema (`0003_ledgers.sql`)**: `ledgers(id, name, base_currency, created_at)`; add `ledger_id INTEGER NOT NULL` to `accounts`, `account_kinds`, `snapshots`, `events`, `loans`; `settings` becomes `(ledger_id, key, value)`. Backfill everything to ledger 1. Primary keys of `account_kinds` become `(ledger_id, key)`; indexes lead with `ledger_id`.

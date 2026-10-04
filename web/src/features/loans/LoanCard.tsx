@@ -7,6 +7,7 @@ import { T, t } from "../../i18n"
 import { fmtDate, fmtPct } from "../../lib/format"
 import { fmtRate, fmtTerm } from "./labels"
 import { loanColor, loanStatus, nextChange, type LoanStatus } from "./math"
+import { Simulator } from "./Simulator"
 
 const STATUS: Record<LoanStatus, { label: string; color: string }> = {
   pending: { label: "尚未開始", color: "gray" },
@@ -89,6 +90,7 @@ export function LoanCard({ loan: l, index, account, today, onEdit, onDelete }: P
           </Text>
         </Group>
       )}
+      {status !== "paid" && <Simulator loan={l} />}
     </Paper>
   )
 }

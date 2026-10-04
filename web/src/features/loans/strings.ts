@@ -82,4 +82,21 @@ export const en: Record<string, string> = {
   "已新增貸款「{}」": "Added loan “{}”",
   "每月月付": "Monthly payments",
   "月份": "Month",
+
+  // simulator
+  "試算提前還款": "What if I paid more?",
+  "1萬": "10,000",
+  "100萬": "1,000,000",
+  "收起試算": "Hide",
+  "每月多還": "Extra per month",
+  "一次多還": "One-time extra",
+  "哪個月": "In which month",
+  "選月份": "Pick a month",
+  "或者,想在哪個月還清": "Or: pay it off by",
+  "要在 {} 還清,每月多還 {}": "To finish by {}, pay {} more a month",
+  "提前 {} 個月": "{} months sooner",
+  "省 {}": "saves {}",
+  "寬限期後月付": "Payment after interest-only",
+  "本金先還,跳得少": "less principal left, smaller jump",
+  "每多還 1 元,省 {} 元利息。利率、期數照這筆貸款設定,實際以銀行為準。": "Every extra dollar saves {} in interest. Uses this loan's rate and term; your bank's figures are authoritative.",
 }

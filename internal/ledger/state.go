@@ -76,7 +76,7 @@ func (h *api) state(fileBackups bool) gin.HandlerFunc {
 		}
 		views, sched := loanViews(loans, now)
 
-		s := series(snaps, kindOf, kindMap(kinds))
+		s := seriesWithLoans(snaps, kindOf, kindMap(kinds), loans)
 		if s == nil {
 			s = []Row{}
 		}

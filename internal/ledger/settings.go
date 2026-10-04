@@ -3,6 +3,7 @@ package ledger
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -58,6 +59,19 @@ func (h *api) putSettings(c *gin.Context) {
 		case "layout":
 			if len(v) > maxLayoutBytes || !validLayout(v) {
 				bad(c, http.StatusBadRequest, "版面設定要是 4 KB 以內的 JSON,區塊只能是 trend、mix、sheet、loans、events,各一次")
+				return
+			}
+		case "target_amount":
+			if v != "" {
+				n, err := strconv.ParseFloat(v, 64)
+				if err != nil || !(n > 0) || n > maxAmount {
+					bad(c, http.StatusBadRequest, "目標金額要是正數")
+					return
+				}
+			}
+		case "target_date":
+			if v != "" && (!validDate(v) || outOfRange(v)) {
+				bad(c, http.StatusBadRequest, "目標日期格式錯誤")
 				return
 			}
 		case "demo", "stale_muted":

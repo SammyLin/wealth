@@ -23,3 +23,25 @@ assert.deepStrictEqual(levelPayment({ ...tranche, grace_months: 360 }), 0)
 near(totalInterest({ principal: 1200, rate: 0, grace_months: 0, total_months: 12 }), 0)
 assert.deepStrictEqual(pctToRate(2.185), 0.02185)
 assert.deepStrictEqual(rateToPct(0.02185), 2.185)
+
+// simulator: no extras reproduces the closed form; extras shorten and save; grace-period extras shrink the jump
+import { extraToFinishBy, simulate } from "./math.ts"
+{
+  const l = { ...tranche, start: "2021-06-15" }
+  const base = simulate(l)
+  assert.deepStrictEqual(base.months, 360)
+  assert.deepStrictEqual(base.end_date, "2051-06-15")
+  near(base.interest, totalInterest(tranche), 1) // month-by-month vs closed form, within a dollar
+  near(base.level, levelPayment(tranche))
+  const more = simulate(l, { extra: 10_000 })
+  assert.ok(more.months < 360 && more.interest < base.interest)
+  assert.ok(more.level < base.level, "extra during the grace period lowers the level payment")
+  const lump = simulate(l, { lump: { month: "2030-01", amount: 1_000_000 } })
+  assert.ok(lump.months < 360 && lump.level === base.level, "a lump sum after grace keeps the payment, shortens the term")
+  assert.deepStrictEqual(simulate(l, { lump: { month: "2010-01", amount: 1e9 } }).months, 360, "a lump before the start is ignored")
+  const need = extraToFinishBy(l, "2041-06")
+  assert.ok(need > 0 && simulate(l, { extra: need }).months <= 240 && simulate(l, { extra: need - 1 }).months > 240)
+  assert.deepStrictEqual(extraToFinishBy(l, "2060-01"), 0)
+  assert.ok(Number.isNaN(extraToFinishBy(l, "2021-06")))
+  near(simulate({ principal: 1200, rate: 0, grace_months: 0, total_months: 12, start: "2026-01-01" }).interest, 0)
+}

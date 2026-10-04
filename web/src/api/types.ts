@@ -57,6 +57,10 @@ export type Settings = {
   demo: string
   /** JSON list of account ids the stale-balance nudge skips; "" for none */
   stale_muted: string
+  /** net-worth goal for the hero: amount in the base currency as a plain number string, "" for none */
+  target_amount: string
+  /** "YYYY-MM-DD" or "" */
+  target_date: string
 }
 
 export type Layout = { sections: { id: SectionId; hidden: boolean }[] }

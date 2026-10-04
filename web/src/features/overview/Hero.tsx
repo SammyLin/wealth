@@ -1,5 +1,5 @@
-import { Box, Button, Card, ColorSwatch, Group, Menu, Progress, SimpleGrid, Text, Title, Tooltip } from "@mantine/core"
-import { BellOff, Clock, Minus, TrendingDown, TrendingUp } from "lucide-react"
+import { Box, Button, Card, ColorSwatch, Group, Menu, Progress, SimpleGrid, Stack, Text, Title, Tooltip } from "@mantine/core"
+import { BellOff, Clock, Flag, Minus, TrendingDown, TrendingUp } from "lucide-react"
 import type { Account, Kind, Row, State } from "../../api/types"
 import { useLedgerState, useMoney } from "../../api/useLedger"
 import { t, T } from "../../i18n"
@@ -9,7 +9,8 @@ import { useOpenDialog } from "../../shell/dialogs"
 import { mutedIds, mutePatch } from "../../shell/muted"
 import { Stat } from "../../shell/Stat"
 import { isStale } from "../balance-sheet/sheet"
-import { liquidityMix, movers, openings, topAccount } from "./data"
+import { inPeriod, liquidityMix, movers, openings, topAccount } from "./data"
+import { addMonths, monthIndex } from "../loans/math"
 import { useTrendRange } from "./range"
 
 /** Hero: net worth, change since the previous record, liquidity bar. Not a numbered section. */
@@ -60,6 +61,7 @@ export function Overview() {
         {prev && last && (
           <Delta value={last.total - prev.total} opened={openings(state.accounts, state.kinds, prev.date, last.date)} base={prev.total} label={T`較上一筆紀錄(${fmtDate(prev.date)})`} />
         )}
+        <Target rows={rows} amount={state.settings.target_amount} date={state.settings.target_date} />
         {shown.length > 1 && <Movers from={shown[0]} to={shown[shown.length - 1]} label={label} kinds={state.kinds} accounts={state.accounts} />}
         <Stale state={state} />
       </Box>
@@ -240,5 +242,46 @@ function LiquidityCard() {
         <Stat label={t("負債比")} value={assets ? fmtPct(debt / assets, 0) : "—"} align="right" />
       </SimpleGrid>
     </Card>
+  )
+}
+
+/**
+ * The one goal (settings target_amount / target_date): progress, and when the past year's pace gets there.
+ * Pace is net worth now minus a year ago, per month; a goal already met or a flat year says so instead.
+ */
+function Target({ rows, amount, date }: { rows: Row[]; amount: string; date: string }) {
+  const money = useMoney()
+  const goal = Number(amount)
+  const last = rows.at(-1)
+  if (!(goal > 0) || !last) return null
+  const progress = Math.min(1, Math.max(0, last.total / goal))
+  const first = inPeriod(rows, "1Y")[0]
+  const span = first && first !== last ? Math.max(1, monthIndex(first.date, last.date.slice(0, 7))) : 0
+  const pace = span ? (last.total - first.total) / span : 0
+  let eta: string | null = null
+  if (last.total < goal && pace > 0) eta = addMonths(last.date, Math.ceil((goal - last.total) / pace))
+  const vsTarget = eta && date ? monthIndex(eta, date.slice(0, 7)) : 0 // months the pace beats (+) or misses (−) the date
+  return (
+    <Stack gap={4} mt="md" maw={520}>
+      <Group gap={8} wrap="wrap" align="baseline">
+        <Group gap={6} wrap="nowrap" c="dimmed">
+          <Flag size={14} aria-hidden />
+          <Text fz="sm">{date ? T`目標 ${money(goal)} · ${fmtDate(date)}` : T`目標 ${money(goal)}`}</Text>
+        </Group>
+        <Text fz="sm" className="num">
+          {fmtPct(progress, 0)}
+        </Text>
+      </Group>
+      <Progress value={progress * 100} size="sm" color="gold" aria-label={T`已達成 ${fmtPct(progress, 0)}`} />
+      <Text fz="sm" c="dimmed">
+        {last.total >= goal
+          ? t("已達標。")
+          : eta
+            ? T`照近一年的速度,${fmtDate(eta)} 到。` + (date ? (vsTarget >= 0 ? T`比目標早 ${vsTarget} 個月。` : T`比目標晚 ${-vsTarget} 個月。`) : "")
+            : span
+              ? t("近一年沒有成長,照這個速度不會達到。")
+              : t("再記一年,就能算出照這個速度何時達到。")}
+      </Text>
+    </Stack>
   )
 }

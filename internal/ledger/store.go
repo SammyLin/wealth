@@ -18,6 +18,9 @@ var defaultSettings = map[string]string{
 	"demo": "",
 	// account ids the "hasn't been updated in 90 days" nudge skips (a house revalued twice a year), as [1,2]
 	"stale_muted": "",
+	// one net-worth goal for the hero: amount in the base currency and an optional date, "" for none
+	"target_amount": "",
+	"target_date":   "",
 }
 
 // defaultLayout is the dashboard section order the UI starts with; the layout editor overwrites it.

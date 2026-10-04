@@ -8,13 +8,10 @@ type Terms = Pick<Loan, "principal" | "rate" | "grace_months" | "total_months">
 
 export const gracePayment = (l: Terms) => (l.principal * l.rate) / 12
 
-export function levelPayment(l: Terms): number {
-  const r = l.rate / 12
-  const n = l.total_months - l.grace_months
-  if (n <= 0) return 0
-  if (r === 0) return l.principal / n
-  return (l.principal * r) / (1 - Math.pow(1 + r, -n))
-}
+/** Level payment that repays `p` over `n` months at monthly rate `r`. */
+const annuity = (p: number, r: number, n: number) => (n <= 0 ? 0 : r === 0 ? p / n : (p * r) / (1 - Math.pow(1 + r, -n)))
+
+export const levelPayment = (l: Terms) => annuity(l.principal, l.rate / 12, l.total_months - l.grace_months)
 
 /** Interest paid over the whole term: grace interest + level payments − principal. */
 export const totalInterest = (l: Terms) =>
@@ -92,3 +89,44 @@ const LOAN_COLORS = [
   "light-dark(#d4a52f, #a87203)",
 ]
 export const loanColor = (i: number) => LOAN_COLORS[i % LOAN_COLORS.length]
+
+// ---- Payoff simulator ("what if I paid more?", YNAB's Loan Planner reduced to three inputs). Month by month,
+// so an extra paid during the grace period shrinks the level payment at month grace+1 (the jump), and a lump
+// sum shortens the term while the payment stays. Self-check in math.check.ts.
+
+export type SimOpts = { extra?: number; lump?: { month: string; amount: number } } // month "YYYY-MM"
+export type Sim = { months: number; end_date: string; interest: number; level: number }
+
+/** Calendar months from the start date's month to "YYYY-MM" (the payment index of that month). */
+export const monthIndex = (start: string, month: string) =>
+  (Number(month.slice(0, 4)) - Number(start.slice(0, 4))) * 12 + Number(month.slice(5, 7)) - Number(start.slice(5, 7))
+
+export function simulate(l: Terms & { start: string }, o: SimOpts = {}): Sim {
+  const r = l.rate / 12
+  const extra = o.extra && o.extra > 0 ? o.extra : 0
+  const lumpAt = o.lump && o.lump.amount > 0 ? monthIndex(l.start, o.lump.month) : -1
+  let bal = l.principal, interest = 0, level = 0, k = 1
+  for (; k <= l.total_months && bal > 0.005; k++) {
+    const i = bal * r
+    interest += i
+    if (k === l.grace_months + 1) level = annuity(bal, r, l.total_months - l.grace_months)
+    const scheduled = k <= l.grace_months ? 0 : Math.max(0, level - i)
+    bal -= Math.min(bal, scheduled + extra + (k === lumpAt ? o.lump!.amount : 0))
+  }
+  const months = k - 1
+  return { months, end_date: addMonths(l.start, months), interest, level }
+}
+
+/** The monthly extra that pays the loan off by "YYYY-MM": 0 when the schedule already does, NaN when it is before the first payment. */
+export function extraToFinishBy(l: Terms & { start: string }, month: string): number {
+  const target = monthIndex(l.start, month)
+  if (target >= l.total_months) return 0
+  if (target < 1) return NaN
+  let lo = 0, hi = l.principal
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2
+    if (simulate(l, { extra: mid }).months <= target) hi = mid
+    else lo = mid
+  }
+  return Math.ceil(hi)
+}

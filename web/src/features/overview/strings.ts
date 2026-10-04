@@ -1,6 +1,15 @@
 export const en: Record<string, string> = {
   // hero
   "淨資產": "Net worth",
+  "目標 {}": "Goal {}",
+  "目標 {} · {}": "Goal {} by {}",
+  "已達成 {}": "{} reached",
+  "已達標。": "Goal reached.",
+  "照近一年的速度,{} 到。": "At the past year's pace, you get there {}.",
+  "比目標早 {} 個月。": "{} months ahead of the date.",
+  "比目標晚 {} 個月。": "{} months behind the date.",
+  "近一年沒有成長,照這個速度不會達到。": "No growth over the past year, so this pace never gets there.",
+  "再記一年,就能算出照這個速度何時達到。": "After a year of records, this shows when the current pace gets there.",
   "淨資產 · 截至 {}": "Net worth · as of {}",
   "尚無紀錄": "No records yet",
   "較上一筆紀錄({})": "since the previous record ({})",
