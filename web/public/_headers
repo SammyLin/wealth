@@ -1,0 +1,8 @@
+# Workers Static Assets headers (Cloudflare deploy only; the self-hosted binary sets the same ones in Go,
+# see internal/ledger/router.go csp(); a Go test keeps the two CSPs identical).
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://font.emtech.cc; font-src 'self' data: https://fonts.gstatic.com https://font.emtech.cc; img-src 'self' data:; connect-src 'self' https://cloudflareinsights.com; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: same-origin
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

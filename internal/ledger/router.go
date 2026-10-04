@@ -168,8 +168,9 @@ func csp() string {
 	if SystemFonts {
 		style, font = "", ""
 	}
-	return "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'" + style + "; " +
-		"font-src 'self' data:" + font + "; img-src 'self' data:; connect-src 'self'; " +
+	// Cloudflare's Web Analytics (when enabled on the zone) injects its beacon into every page; allow it.
+	return "default-src 'self'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'" + style + "; " +
+		"font-src 'self' data:" + font + "; img-src 'self' data:; connect-src 'self' https://cloudflareinsights.com; " +
 		"object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 }
 

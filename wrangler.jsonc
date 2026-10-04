@@ -9,6 +9,10 @@
   "preview_urls": false,
   // Cloudflare Access: Zero Trust → Access → Applications → your app → AUD tag
   "vars": { "ACCESS_TEAM_DOMAIN": "yourteam.cloudflareaccess.com", "ACCESS_AUD": "<access-application-aud>" },
+  // Static files are served by Workers Static Assets straight from the edge; only /api/* reaches the Go wasm.
+  // (workers-go instantiates the whole wasm per request: a page load that fans out to a dozen chunks would
+  // exceed the isolate's memory and 503.) Unknown paths get index.html so client routes deep-link.
+  "assets": { "directory": "./web/dist", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
   "build": { "command": "make build-worker" },
   "d1_databases": [
     { "binding": "DB", "database_name": "wealth", "database_id": "<your-d1-database-id>", "migrations_dir": "migrations" }
